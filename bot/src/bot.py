@@ -4,17 +4,17 @@ import logging
 import asyncio
 from io import BytesIO
 
-from telegram import (
-    Update,
-    InlineKeyboardButton,
-    InlineKeyboardMarkup,
-    LabeledPrice,
-)
+import numpy as np
+import cv2
+import mediapipe as mp
+from mediapipe.tasks import python as mp_python
+from mediapipe.tasks.python import vision as mp_vision
+
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
     Application,
     CommandHandler,
     MessageHandler,
-    PreCheckoutQueryHandler,
     CallbackQueryHandler,
     filters,
     ContextTypes,
@@ -23,8 +23,6 @@ from telegram.constants import ParseMode
 
 from face_analyzer import analyze_face
 from pdf_generator import generate_pdf
-from payments import ANALYSIS_PRICE_STARS, ANALYSIS_TITLE, ANALYSIS_DESCRIPTION, ANALYSIS_PAYLOAD
-from storage import save_pending_photo, get_pending_photo, clear_pending_photo
 
 logging.basicConfig(
     format="%(asctime)s | %(levelname)s | %(name)s | %(message)s",
@@ -34,6 +32,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 BOT_TOKEN = os.environ["TELEGRAM_BOT_TOKEN"]
+MODEL_PATH = os.path.join(os.path.dirname(__file__), "..", "assets", "face_landmarker.task")
 
 WELCOME_TEXT = (
     "👁 *LooksMaxxing AI* — Facial Analysis Bot\n\n"
@@ -43,14 +42,14 @@ WELCOME_TEXT = (
     "• 📏 Facial Thirds balance\n"
     "• 👁 Canthal Tilt (hunter eyes score)\n"
     "• 💪 Jawline definition\n\n"
-    "The full report with scores, measurements, and personalized looksmaxxing advice is delivered as a *PDF* for *50 Telegram Stars* ⭐\n\n"
+    "You'll receive an annotated photo and a full *PDF report* — completely *free!* 🎉\n\n"
     "📸 *Send your photo to begin!*"
 )
 
 HELP_TEXT = (
     "*How it works:*\n\n"
     "1. Send a front-facing photo (good lighting, neutral expression)\n"
-    "2. Pay *50 Stars* ⭐ to generate the full report\n"
+    "2. Wait 15–30 seconds while the AI analyzes your face\n"
     "3. Receive an annotated photo + detailed PDF with:\n"
     "   — Overall attractiveness score (out of 10)\n"
     "   — Golden ratio analysis\n"
@@ -103,136 +102,54 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.message.reply_text(HELP_TEXT, parse_mode=ParseMode.MARKDOWN)
     elif query.data == "about":
         await query.message.reply_text(ABOUT_TEXT, parse_mode=ParseMode.MARKDOWN)
-    elif query.data == "pay":
-        user_id = query.from_user.id
-        file_id = get_pending_photo(user_id)
-        if not file_id:
-            await query.message.reply_text(
-                "⚠️ Your photo session expired. Please send your photo again."
-            )
-            return
-        await _send_invoice(query.message, context, user_id)
+
+
+def _detect_face(img_bytes: bytes) -> bool:
+    base_options = mp_python.BaseOptions(model_asset_path=MODEL_PATH)
+    options = mp_vision.FaceLandmarkerOptions(base_options=base_options, num_faces=1)
+    img_array = np.frombuffer(img_bytes, dtype=np.uint8)
+    img_cv = cv2.imdecode(img_array, cv2.IMREAD_COLOR)
+    rgb = cv2.cvtColor(img_cv, cv2.COLOR_BGR2RGB)
+    mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb)
+    with mp_vision.FaceLandmarker.create_from_options(options) as detector:
+        result = detector.detect(mp_image)
+    return bool(result.face_landmarks)
 
 
 async def photo_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     message = update.message
 
-    # Get the highest-resolution photo
     photo = message.photo[-1]
     file_id = photo.file_id
 
-    # Save for after payment
-    save_pending_photo(user.id, file_id)
-
-    # Quick free preview: try to detect a face
     await message.reply_text("🔍 Detecting face...")
+
+    tg_file = await context.bot.get_file(file_id)
+    img_bytes = bytes(await tg_file.download_as_bytearray())
+
     try:
-        tg_file = await context.bot.get_file(file_id)
-        img_bytes = bytes(await tg_file.download_as_bytearray())
-
-        import numpy as np
-        import cv2
-        import mediapipe as mp
-        from mediapipe.tasks import python as mp_python
-        from mediapipe.tasks.python import vision as mp_vision
-        import os
-
-        model_path = os.path.join(os.path.dirname(__file__), "..", "assets", "face_landmarker.task")
-        base_options = mp_python.BaseOptions(model_asset_path=model_path)
-        options = mp_vision.FaceLandmarkerOptions(
-            base_options=base_options,
-            num_faces=1,
-        )
-
-        img_array = np.frombuffer(img_bytes, dtype=np.uint8)
-        img_cv = cv2.imdecode(img_array, cv2.IMREAD_COLOR)
-        rgb = cv2.cvtColor(img_cv, cv2.COLOR_BGR2RGB)
-        mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb)
-
-        with mp_vision.FaceLandmarker.create_from_options(options) as detector:
-            result = detector.detect(mp_image)
-
-        if not result.face_landmarks:
-            await message.reply_text(
-                "❌ *No face detected!*\n\n"
-                "Please send a clear, front-facing photo with good lighting and no heavy filters.",
-                parse_mode=ParseMode.MARKDOWN,
-            )
-            clear_pending_photo(user.id)
-            return
-
+        loop = asyncio.get_event_loop()
+        face_found = await loop.run_in_executor(None, _detect_face, img_bytes)
     except Exception as e:
         logger.warning(f"Face pre-check failed: {e}")
+        face_found = True  # allow through on error; analysis will catch it
 
-    kb = InlineKeyboardMarkup([
-        [InlineKeyboardButton(f"⭐ Pay {ANALYSIS_PRICE_STARS} Stars — Get Full Report", callback_data="pay")],
-    ])
-
-    await message.reply_text(
-        "✅ *Face detected!*\n\n"
-        f"Ready to generate your full analysis report.\n\n"
-        f"Your report will include:\n"
-        f"• Overall attractiveness score (out of 10)\n"
-        f"• Golden Ratio, Symmetry, Facial Thirds\n"
-        f"• Canthal Tilt angle & score\n"
-        f"• Jawline rating\n"
-        f"• Detailed measurements\n"
-        f"• Personalized looksmaxxing advice\n\n"
-        f"*Cost: {ANALYSIS_PRICE_STARS} Telegram Stars ⭐*",
-        parse_mode=ParseMode.MARKDOWN,
-        reply_markup=kb,
-    )
-
-
-async def _send_invoice(message, context: ContextTypes.DEFAULT_TYPE, user_id: int):
-    await context.bot.send_invoice(
-        chat_id=message.chat_id,
-        title=ANALYSIS_TITLE,
-        description=ANALYSIS_DESCRIPTION,
-        payload=ANALYSIS_PAYLOAD,
-        currency="XTR",
-        prices=[LabeledPrice(label="Full PDF Report", amount=ANALYSIS_PRICE_STARS)],
-    )
-
-
-async def precheckout_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.pre_checkout_query
-    if query.invoice_payload != ANALYSIS_PAYLOAD:
-        await query.answer(ok=False, error_message="Unknown payment payload.")
-        return
-    user_id = query.from_user.id
-    if not get_pending_photo(user_id):
-        await query.answer(
-            ok=False,
-            error_message="Your photo session expired. Please send your photo again."
-        )
-        return
-    await query.answer(ok=True)
-
-
-async def successful_payment_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user = update.effective_user
-    message = update.message
-
-    await message.reply_text(
-        "✅ *Payment received! Analyzing your face...*\n\n"
-        "This may take 15–30 seconds. Please wait ⏳",
-        parse_mode=ParseMode.MARKDOWN,
-    )
-
-    file_id = get_pending_photo(user.id)
-    if not file_id:
+    if not face_found:
         await message.reply_text(
-            "⚠️ Sorry, your photo session expired. Please contact support — your Stars will be refunded."
+            "❌ *No face detected!*\n\n"
+            "Please send a clear, front-facing photo with good lighting and no heavy filters.",
+            parse_mode=ParseMode.MARKDOWN,
         )
         return
+
+    await message.reply_text(
+        "✅ *Face detected! Analyzing...*\n\n"
+        "Running full facial geometry analysis. This may take 15–30 seconds ⏳",
+        parse_mode=ParseMode.MARKDOWN,
+    )
 
     try:
-        tg_file = await context.bot.get_file(file_id)
-        img_bytes = bytes(await tg_file.download_as_bytearray())
-
-        # Run analysis in thread pool to avoid blocking
         loop = asyncio.get_event_loop()
         metrics = await loop.run_in_executor(None, analyze_face, img_bytes)
 
@@ -241,10 +158,8 @@ async def successful_payment_handler(update: Update, context: ContextTypes.DEFAU
                 "❌ Face analysis failed. Could not detect facial landmarks.\n"
                 "Please try with a clearer front-facing photo."
             )
-            clear_pending_photo(user.id)
             return
 
-        # Generate annotated image
         if metrics.landmark_image:
             await context.bot.send_photo(
                 chat_id=message.chat_id,
@@ -262,7 +177,6 @@ async def successful_payment_handler(update: Update, context: ContextTypes.DEFAU
                 parse_mode=ParseMode.MARKDOWN,
             )
 
-        # Generate PDF
         username = user.username or user.first_name or "User"
         pdf_bytes = await loop.run_in_executor(None, generate_pdf, metrics, username)
 
@@ -278,12 +192,10 @@ async def successful_payment_handler(update: Update, context: ContextTypes.DEFAU
             parse_mode=ParseMode.MARKDOWN,
         )
 
-        clear_pending_photo(user.id)
-
     except Exception as e:
         logger.exception(f"Analysis failed for user {user.id}: {e}")
         await message.reply_text(
-            "❌ Something went wrong during analysis. Please try again or contact support."
+            "❌ Something went wrong during analysis. Please try again."
         )
 
 
@@ -295,8 +207,6 @@ def main():
     app.add_handler(CommandHandler("about", about_cmd))
     app.add_handler(CallbackQueryHandler(button_callback))
     app.add_handler(MessageHandler(filters.PHOTO, photo_handler))
-    app.add_handler(PreCheckoutQueryHandler(precheckout_handler))
-    app.add_handler(MessageHandler(filters.SUCCESSFUL_PAYMENT, successful_payment_handler))
 
     logger.info("LooksMaxxing AI Bot starting...")
     app.run_polling(allowed_updates=Update.ALL_TYPES)
