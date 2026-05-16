@@ -10,52 +10,46 @@ import mediapipe as mp
 from mediapipe.tasks import python as mp_python
 from mediapipe.tasks.python import vision as mp_vision
 
-from telegram import (
-    Update,
-    InlineKeyboardButton,
-    InlineKeyboardMarkup,
-)
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
-    Application,
-    CommandHandler,
-    MessageHandler,
-    CallbackQueryHandler,
-    filters,
-    ContextTypes,
+    Application, CommandHandler, MessageHandler,
+    CallbackQueryHandler, filters, ContextTypes,
 )
 from telegram.constants import ParseMode
 
 from face_analyzer import analyze_face
 from pdf_generator import generate_brief_pdf, generate_full_pdf
-from storage import increment_daily_count, get_displayed_daily_count
+from storage import (
+    increment_daily_count, get_displayed_daily_count,
+    save_admin_chat_id, get_admin_chat_id,
+)
 
 logging.basicConfig(
     format="%(asctime)s | %(levelname)s | %(name)s | %(message)s",
-    level=logging.INFO,
-    stream=sys.stdout,
+    level=logging.INFO, stream=sys.stdout,
 )
 logger = logging.getLogger(__name__)
 
-BOT_TOKEN   = os.environ["TELEGRAM_BOT_TOKEN"]
-MODEL_PATH  = os.path.join(os.path.dirname(__file__), "..", "assets", "face_landmarker.task")
-ASSETS_DIR  = os.path.join(os.path.dirname(__file__), "..", "assets")
+BOT_TOKEN  = os.environ["TELEGRAM_BOT_TOKEN"]
+MODEL_PATH = os.path.join(os.path.dirname(__file__), "..", "assets", "face_landmarker.task")
+ASSETS_DIR = os.path.join(os.path.dirname(__file__), "..", "assets")
 
-# ── Ссылки Tribute (замените на свои после создания продуктов в @TributeAppBot) ──
-TRIBUTE_BRIEF_URL = "https://t.me/tribute"   # замените на ссылку продукта 199 ₽
-TRIBUTE_FULL_URL  = "https://t.me/tribute"   # замените на ссылку продукта 499 ₽
-
-SUPPORT_URL = "https://t.me/facedex_support" # замените на свой аккаунт поддержки
+TRIBUTE_BRIEF_URL = "https://web.tribute.tg/p/w6R"
+TRIBUTE_FULL_URL  = "https://web.tribute.tg/p/w6V"
+SUPPORT_URL       = "https://t.me/facedex_support"
+ADMIN_USERNAME    = "facedex_support"   # без @
 
 
 # ════════════════════════════════════════════════════════════════════════════
 #  Тексты
 # ════════════════════════════════════════════════════════════════════════════
 
-def _main_menu_text() -> str:
+def _main_text() -> str:
     daily = get_displayed_daily_count()
     return (
         "✨ <b>Добро пожаловать в Facedex</b>\n\n"
-        "🔬 Facedex математически измеряет, насколько гармонично черты твоего лица сочетаются друг с другом.\n\n"
+        "🔬 Facedex математически измеряет, насколько гармонично черты твоего лица "
+        "сочетаются друг с другом.\n\n"
         "<blockquote>"
         "💼 <b>Твой баланс:</b> 0 разборов\n"
         f"📊 <b>Сегодня пользователи провели разборов:</b> {daily}"
@@ -65,7 +59,7 @@ def _main_menu_text() -> str:
 
 ABOUT_TEXT = (
     "🔬 <b>Что такое Facedex?</b>\n\n"
-    "Facedex — это математический анализ гармонии лица на основе:\n\n"
+    "Facedex — математический анализ гармонии лица на основе:\n\n"
     "📐 <b>Золотого сечения (φ = 1.618)</b>\n"
     "Идеальная пропорция, встречающаяся в природе и классической красоте.\n\n"
     "🪞 <b>Симметрии лица</b>\n"
@@ -76,31 +70,23 @@ ABOUT_TEXT = (
     "Угол наклона глазной оси (+5°…+10° — «охотничьи глаза»).\n\n"
     "💪 <b>Линии челюсти</b>\n"
     "Соотношение ширины челюсти к скулам.\n\n"
-    "➕ И другие метрики по нормам антропометриста Лесли Фаркаса.\n\n"
+    "➕ И ещё 6 метрик по нормам антропометриста Лесли Фаркаса.\n\n"
     "<i>Только для развлечения. Красота субъективна.</i>"
 )
 
-SUPPORT_TEXT = (
-    "💬 <b>Техподдержка Facedex</b>\n\n"
-    "Если у вас возникли вопросы или проблемы — напишите нам:\n\n"
-    "👉 @facedex_support\n\n"
-    "<i>Обычно отвечаем в течение нескольких часов.</i>"
-)
-
-BRIEF_PLAN_TEXT = (
-    "📍 <b>Главное меню › Выбор тарифа › Оплата</b>\n\n"
-    "━━━━━━━━━━━━━━━━━━━━━\n"
+BRIEF_TEXT = (
+    "📍 <b>Главное меню  ›  Выбор тарифа  ›  Оплата</b>\n\n"
+    "<blockquote>"
     "⚜️ <b>План</b>  —  Краткий разбор\n\n"
-    "💰 <b>Цена</b>  —  199 ₽\n"
-    "━━━━━━━━━━━━━━━━━━━━━\n\n"
+    "💰 <b>Цена</b>  —  199 ₽"
+    "</blockquote>\n\n"
     "📚 <b>Что входит в один разбор:</b>\n\n"
     "🔸 <b>Итоговая оценка гармонии:</b>\n"
     "математический балл по геометрии лица — насколько твои пропорции близки к норме.\n\n"
     "🔸 <b>Тир по looksmaxing-шкале:</b>\n"
     "LTN, MTN или HTN — твоя категория внешности.\n\n"
     "🔸 <b>Оценка по ключевым параметрам:</b>\n"
-    "глаза, нос, губы, скулы, челюсть, брови, симметрия и баланс — "
-    "где у тебя сильные стороны и где оценка проседает.\n\n"
+    "глаза, нос, губы, скулы, челюсть, брови, симметрия и баланс.\n\n"
     "━━━━━━━━━━━━━━━━━━━━━\n"
     "💡 <b>После оплаты:</b>\n\n"
     "Просто отправь фото в этот чат —\n"
@@ -108,23 +94,23 @@ BRIEF_PLAN_TEXT = (
     "Готовый PDF-отчёт получишь за <b>1 минуту</b> ⚡"
 )
 
-FULL_PLAN_TEXT = (
-    "📍 <b>Главное меню › Выбор тарифа › Оплата</b>\n\n"
-    "━━━━━━━━━━━━━━━━━━━━━\n"
+FULL_TEXT = (
+    "📍 <b>Главное меню  ›  Выбор тарифа  ›  Оплата</b>\n\n"
+    "<blockquote>"
     "⚜️ <b>План</b>  —  Полный разбор\n\n"
-    "💰 <b>Цена</b>  —  499 ₽\n"
-    "━━━━━━━━━━━━━━━━━━━━━\n\n"
+    "💰 <b>Цена</b>  —  499 ₽"
+    "</blockquote>\n\n"
     "📚 <b>Что входит в один разбор:</b>\n\n"
     "🔹 <b>Персональный PDF-отчёт на 25 страниц:</b>\n"
-    "полный анализ лица; итоговая оценка гармонии, диаграмма со всеми метриками и визуализация пропорций.\n\n"
+    "полный анализ лица, итоговая оценка гармонии, диаграмма со всеми метриками.\n\n"
     "🔹 <b>Разбор 20 ключевых метрик лица:</b>\n"
-    "пропорции твоего лица сравниваются с нормативными значениями из исследования лицевой антропометрии Лесли Фаркаса.\n\n"
+    "пропорции сравниваются с нормативными значениями из исследования Лесли Фаркаса.\n\n"
     "🔹 <b>Наглядная визуализация измерений:</b>\n"
-    "на твоё лицо накладываются 98 ключевых точек, все отрезки и соотношения, по которым считаются пропорции.\n\n"
+    "98 ключевых точек, все отрезки и соотношения.\n\n"
     "🔹 <b>Понятное объяснение каждой метрики:</b>\n"
-    "что именно измеряется, какое значение получилось и как этот показатель влияет на гармонию твоего лица.\n\n"
+    "что измеряется, какое значение и как влияет на гармонию.\n\n"
     "🔹 <b>Конкретные шаги по улучшению:</b>\n"
-    "5 советов по самым слабым метрикам и 2 — по уходу; мы расскажем, что менять в первую очередь и что даст максимальный эффект.\n\n"
+    "5 советов по слабым метрикам + 2 по уходу.\n\n"
     "━━━━━━━━━━━━━━━━━━━━━\n"
     "💡 <b>После оплаты:</b>\n\n"
     "Просто отправь фото в этот чат —\n"
@@ -140,10 +126,8 @@ FULL_PLAN_TEXT = (
 def kb_main():
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("🔬  Получить разбор лица", callback_data="menu_analyze")],
-        [
-            InlineKeyboardButton("💬 Техподдержка",  url=SUPPORT_URL),
-            InlineKeyboardButton("❓ Что это?",       callback_data="about"),
-        ],
+        [InlineKeyboardButton("💬  Техподдержка", url=SUPPORT_URL),
+         InlineKeyboardButton("❓  Что это?",     callback_data="about")],
     ])
 
 
@@ -155,23 +139,25 @@ def kb_plans():
     ])
 
 
-def kb_brief_payment():
+def kb_brief():
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("💳  Оплатить картой любой страны", url=TRIBUTE_BRIEF_URL)],
-        [
-            InlineKeyboardButton("◀️ Назад",          callback_data="menu_analyze"),
-            InlineKeyboardButton("🏠 В главное меню", callback_data="menu_main"),
-        ],
+        [InlineKeyboardButton("◀️  Назад",           callback_data="menu_analyze"),
+         InlineKeyboardButton("🏠  В главное меню",  callback_data="menu_main")],
     ])
 
 
-def kb_full_payment():
+def kb_full():
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("💳  Оплатить картой любой страны", url=TRIBUTE_FULL_URL)],
-        [
-            InlineKeyboardButton("◀️ Назад",          callback_data="menu_analyze"),
-            InlineKeyboardButton("🏠 В главное меню", callback_data="menu_main"),
-        ],
+        [InlineKeyboardButton("◀️  Назад",           callback_data="menu_analyze"),
+         InlineKeyboardButton("🏠  В главное меню",  callback_data="menu_main")],
+    ])
+
+
+def kb_home():
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("🏠  В главное меню", callback_data="menu_main")],
     ])
 
 
@@ -179,45 +165,40 @@ def kb_full_payment():
 #  Хендлеры
 # ════════════════════════════════════════════════════════════════════════════
 
+def _is_admin(user) -> bool:
+    return (user.username or "").lower() == ADMIN_USERNAME.lower()
+
+
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user = update.effective_user
+
+    # Сохраняем chat_id администратора
+    if _is_admin(user):
+        save_admin_chat_id(update.effective_chat.id)
+        logger.info(f"Admin chat_id saved: {update.effective_chat.id}")
+
     await update.message.reply_text(
-        _main_menu_text(),
-        parse_mode=ParseMode.HTML,
-        reply_markup=kb_main(),
+        _main_text(), parse_mode=ParseMode.HTML, reply_markup=kb_main(),
     )
-    # Отправляем примеры PDF отдельным сообщением
     await _send_example_pdfs(update.message.chat_id, context)
 
 
 async def _send_example_pdfs(chat_id: int, context: ContextTypes.DEFAULT_TYPE):
     brief_path = os.path.join(ASSETS_DIR, "example_brief.pdf")
     full_path  = os.path.join(ASSETS_DIR, "example_full.pdf")
-
     if not (os.path.exists(brief_path) and os.path.exists(full_path)):
         return
 
-    await context.bot.send_message(
-        chat_id=chat_id,
-        text=(
-            "📂 <b>Примеры отчётов Facedex</b>\n\n"
-            "Ниже — два PDF-примера на основе искусственно созданного привлекательного мужского лица:"
-        ),
-        parse_mode=ParseMode.HTML,
-    )
-
     with open(brief_path, "rb") as f:
         await context.bot.send_document(
-            chat_id=chat_id,
-            document=f,
+            chat_id=chat_id, document=f,
             filename="1. Краткий разбор лица — пример.pdf",
             caption="📋 <b>Краткий разбор</b> — пример отчёта (199 ₽)",
             parse_mode=ParseMode.HTML,
         )
-
     with open(full_path, "rb") as f:
         await context.bot.send_document(
-            chat_id=chat_id,
-            document=f,
+            chat_id=chat_id, document=f,
             filename="2. Полный разбор лица — пример.pdf",
             caption="📊 <b>Полный разбор</b> — пример отчёта (499 ₽)",
             parse_mode=ParseMode.HTML,
@@ -227,133 +208,132 @@ async def _send_example_pdfs(chat_id: int, context: ContextTypes.DEFAULT_TYPE):
 async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
-    data = query.data
+    d = query.data
 
-    if data == "menu_main":
-        await query.edit_message_text(
-            _main_menu_text(),
-            parse_mode=ParseMode.HTML,
-            reply_markup=kb_main(),
-        )
-
-    elif data == "menu_analyze":
+    if d == "menu_main":
+        await query.edit_message_text(_main_text(), parse_mode=ParseMode.HTML,
+                                      reply_markup=kb_main())
+    elif d == "menu_analyze":
         await query.edit_message_text(
             "🔬 <b>Выбери формат разбора:</b>\n\n"
             "<blockquote>"
-            "📋 <b>Краткий</b> — балл, тир, 8 параметров (199 ₽)\n"
-            "📊 <b>Полный</b> — 20 метрик, нормы Фаркаса, советы (499 ₽)"
+            "📋 <b>Краткий</b> — балл, тир, 8 параметров  (199 ₽)\n"
+            "📊 <b>Полный</b> — 20 метрик, нормы Фаркаса, советы  (499 ₽)"
             "</blockquote>",
-            parse_mode=ParseMode.HTML,
-            reply_markup=kb_plans(),
+            parse_mode=ParseMode.HTML, reply_markup=kb_plans(),
         )
-
-    elif data == "plan_brief":
-        await query.edit_message_text(
-            BRIEF_PLAN_TEXT,
-            parse_mode=ParseMode.HTML,
-            reply_markup=kb_brief_payment(),
-        )
-
-    elif data == "plan_full":
-        await query.edit_message_text(
-            FULL_PLAN_TEXT,
-            parse_mode=ParseMode.HTML,
-            reply_markup=kb_full_payment(),
-        )
-
-    elif data == "about":
-        await query.edit_message_text(
-            ABOUT_TEXT,
-            parse_mode=ParseMode.HTML,
-            reply_markup=InlineKeyboardMarkup([
-                [InlineKeyboardButton("🏠 В главное меню", callback_data="menu_main")],
-            ]),
-        )
+    elif d == "plan_brief":
+        await query.edit_message_text(BRIEF_TEXT, parse_mode=ParseMode.HTML,
+                                      reply_markup=kb_brief())
+    elif d == "plan_full":
+        await query.edit_message_text(FULL_TEXT, parse_mode=ParseMode.HTML,
+                                      reply_markup=kb_full())
+    elif d == "about":
+        await query.edit_message_text(ABOUT_TEXT, parse_mode=ParseMode.HTML,
+                                      reply_markup=kb_home())
 
 
 # ── Анализ фото ──────────────────────────────────────────────────────────────
 
 def _detect_face(img_bytes: bytes) -> bool:
-    base_options = mp_python.BaseOptions(model_asset_path=MODEL_PATH)
-    options = mp_vision.FaceLandmarkerOptions(base_options=base_options, num_faces=1)
+    opts = mp_vision.FaceLandmarkerOptions(
+        base_options=mp_python.BaseOptions(model_asset_path=MODEL_PATH), num_faces=1)
     arr = np.frombuffer(img_bytes, dtype=np.uint8)
-    img_cv = cv2.imdecode(arr, cv2.IMREAD_COLOR)
-    rgb = cv2.cvtColor(img_cv, cv2.COLOR_BGR2RGB)
+    rgb = cv2.cvtColor(cv2.imdecode(arr, cv2.IMREAD_COLOR), cv2.COLOR_BGR2RGB)
     mp_img = mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb)
-    with mp_vision.FaceLandmarker.create_from_options(options) as det:
-        res = det.detect(mp_img)
-    return bool(res.face_landmarks)
+    with mp_vision.FaceLandmarker.create_from_options(opts) as det:
+        return bool(det.detect(mp_img).face_landmarks)
+
+
+async def _forward_to_admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Пересылает сообщение/фото администратору."""
+    admin_id = get_admin_chat_id()
+    if not admin_id:
+        return
+    user = update.effective_user
+    name = f"@{user.username}" if user.username else user.full_name
+    try:
+        await context.bot.send_message(
+            admin_id,
+            f"📩 <b>Сообщение от {name}</b> (id: <code>{user.id}</code>):",
+            parse_mode=ParseMode.HTML,
+        )
+        await update.message.forward(admin_id)
+    except Exception as e:
+        logger.warning(f"Не удалось переслать: {e}")
 
 
 async def photo_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
-    message = update.message
 
-    photo = message.photo[-1]
-    await message.reply_text("🔍 Определяю лицо...")
+    # Пересылаем фото администратору
+    await _forward_to_admin(update, context)
 
-    tg_file = await context.bot.get_file(photo.file_id)
+    await update.message.reply_text("🔍 Определяю лицо...")
+
+    tg_file  = await context.bot.get_file(update.message.photo[-1].file_id)
     img_bytes = bytes(await tg_file.download_as_bytearray())
-
-    loop = asyncio.get_event_loop()
+    loop     = asyncio.get_event_loop()
 
     try:
         face_found = await loop.run_in_executor(None, _detect_face, img_bytes)
     except Exception as e:
-        logger.warning(f"Предпроверка лица: {e}")
+        logger.warning(f"Предпроверка: {e}")
         face_found = True
 
     if not face_found:
-        await message.reply_text(
+        await update.message.reply_text(
             "❌ <b>Лицо не найдено!</b>\n\n"
-            "Пожалуйста, отправь чёткое фото анфас при хорошем освещении без тяжёлых фильтров.",
+            "Отправь чёткое фото анфас при хорошем освещении без тяжёлых фильтров.",
             parse_mode=ParseMode.HTML,
         )
         return
 
-    await message.reply_text(
-        "✅ <b>Лицо найдено! Анализирую...</b>\n\n"
-        "Запускаю полный геометрический анализ. Подожди 15–30 секунд ⏳",
+    await update.message.reply_text(
+        "✅ <b>Лицо найдено! Анализирую...</b>\n\nПодожди 15–30 секунд ⏳",
         parse_mode=ParseMode.HTML,
     )
 
     try:
         metrics = await loop.run_in_executor(None, analyze_face, img_bytes)
-
-        if metrics is None:
-            await message.reply_text(
-                "❌ Анализ не удался — не удалось определить ключевые точки лица.\n"
-                "Попробуй другое фото: анфас, хорошее освещение."
-            )
+        if not metrics:
+            await update.message.reply_text("❌ Анализ не удался. Попробуй другое фото.")
             return
 
-        # Аннотированное фото с баллом
+        # Аннотированное фото
         if metrics.landmark_image:
             await context.bot.send_photo(
-                chat_id=message.chat_id,
+                update.effective_chat.id,
                 photo=BytesIO(metrics.landmark_image),
                 caption=(
                     f"🎯 <b>Общий балл: {metrics.overall_score}/10</b>\n"
-                    f"🏆 Грейд: {metrics.grade}\n"
-                    f"🏷 Тир: {metrics.tier} — {_tier_desc(metrics.tier)}\n\n"
+                    f"🏆 {metrics.grade}\n"
+                    f"🏷 {metrics.tier} — {_tier(metrics.tier)}\n\n"
                     f"📐 Золотое сечение: {metrics.golden_ratio_score}/10\n"
                     f"🪞 Симметрия: {metrics.symmetry_score}/10\n"
                     f"📏 Трети лица: {metrics.facial_thirds_score}/10\n"
-                    f"👁 Кантальный тильт: {metrics.canthal_tilt_score}/10 "
-                    f"({metrics.canthal_tilt_degrees:+.1f}°)\n"
+                    f"👁 Кантальный тильт: {metrics.canthal_tilt_score}/10 ({metrics.canthal_tilt_degrees:+.1f}°)\n"
                     f"💪 Челюсть: {metrics.jaw_score}/10\n\n"
-                    "<i>Полный PDF-отчёт ниже 👇</i>"
+                    "<i>PDF-отчёт ниже 👇</i>"
                 ),
                 parse_mode=ParseMode.HTML,
             )
 
         username = user.username or user.first_name or "user"
 
-        # Полный PDF
-        pdf_bytes = await loop.run_in_executor(None, generate_full_pdf, metrics, username)
+        # Для администратора — отправляем оба PDF
+        if _is_admin(user):
+            brief_b = await loop.run_in_executor(None, generate_brief_pdf, metrics, username)
+            await context.bot.send_document(
+                update.effective_chat.id, BytesIO(brief_b),
+                filename=f"facedex_brief_{user.id}.pdf",
+                caption="📋 <b>Краткий разбор</b>",
+                parse_mode=ParseMode.HTML,
+            )
+
+        pdf_b = await loop.run_in_executor(None, generate_full_pdf, metrics, username)
         await context.bot.send_document(
-            chat_id=message.chat_id,
-            document=BytesIO(pdf_bytes),
+            update.effective_chat.id, BytesIO(pdf_b),
             filename=f"facedex_full_{user.id}.pdf",
             caption=(
                 "📊 <b>Полный разбор Facedex</b>\n\n"
@@ -366,16 +346,19 @@ async def photo_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         increment_daily_count()
 
     except Exception as e:
-        logger.exception(f"Ошибка анализа для {user.id}: {e}")
-        await message.reply_text("❌ Что-то пошло не так. Попробуй ещё раз.")
+        logger.exception(f"Ошибка анализа {user.id}: {e}")
+        await update.message.reply_text("❌ Что-то пошло не так. Попробуй ещё раз.")
 
 
-def _tier_desc(tier: str) -> str:
-    return {
-        "HTN": "High Tier Normie",
-        "MTN": "Mid Tier Normie",
-        "LTN": "Low Tier Normie",
-    }.get(tier, tier)
+async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Пересылает текстовые сообщения от пользователей администратору."""
+    if _is_admin(update.effective_user):
+        return   # своё сообщение не пересылаем себе
+    await _forward_to_admin(update, context)
+
+
+def _tier(t: str) -> str:
+    return {"HTN": "High Tier Normie", "MTN": "Mid Tier Normie", "LTN": "Low Tier Normie"}.get(t, t)
 
 
 # ════════════════════════════════════════════════════════════════════════════
@@ -384,11 +367,10 @@ def _tier_desc(tier: str) -> str:
 
 def main():
     app = Application.builder().token(BOT_TOKEN).build()
-
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CallbackQueryHandler(callback_handler))
     app.add_handler(MessageHandler(filters.PHOTO, photo_handler))
-
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, text_handler))
     logger.info("Facedex Bot запущен...")
     app.run_polling(allowed_updates=Update.ALL_TYPES)
 

@@ -1,5 +1,5 @@
 """
-Storage: pending photo sessions + daily analysis counter.
+Storage: pending photo sessions + daily analysis counter + admin chat ID.
 """
 
 import json
@@ -17,7 +17,7 @@ def _load() -> dict:
         with open(STORAGE_FILE, "r") as f:
             return json.load(f)
     except (FileNotFoundError, json.JSONDecodeError):
-        return {"pending_photos": {}, "daily": {"date": "", "count": 0}}
+        return {}
 
 
 def _save(data: dict):
@@ -50,21 +50,41 @@ def increment_daily_count():
     """Call once after a successful analysis."""
     data = _load()
     today = date.today().isoformat()
-    daily = data.setdefault("daily", {"date": "", "count": 0})
+    daily = data.setdefault("daily", {"date": "", "count": 0, "offset": 0})
     if daily.get("date") != today:
         daily["date"] = today
         daily["count"] = 0
+        daily["offset"] = random.randint(40, 100)
     daily["count"] += 1
     _save(data)
 
 
 def get_displayed_daily_count() -> int:
     """
-    Returns today's real analysis count + a random offset (40–100)
-    so the number always looks higher and more active.
+    Returns today's real count + a fixed random offset (40–100) that is
+    set ONCE per day and persisted — never changes on bot restart.
     """
     data = _load()
     today = date.today().isoformat()
-    daily = data.get("daily", {"date": "", "count": 0})
-    real = daily.get("count", 0) if daily.get("date") == today else 0
-    return real + random.randint(40, 100)
+    daily = data.setdefault("daily", {"date": "", "count": 0, "offset": 0})
+
+    # Initialise a new day (only once per calendar day)
+    if daily.get("date") != today:
+        daily["date"] = today
+        daily["count"] = 0
+        daily["offset"] = random.randint(40, 100)
+        _save(data)
+
+    return daily.get("count", 0) + daily.get("offset", 70)
+
+
+# ── Admin chat ID ─────────────────────────────────────────────────────────────
+
+def save_admin_chat_id(chat_id: int):
+    data = _load()
+    data["admin_chat_id"] = chat_id
+    _save(data)
+
+
+def get_admin_chat_id() -> Optional[int]:
+    return _load().get("admin_chat_id")
