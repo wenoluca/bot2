@@ -333,8 +333,8 @@ def _draw_overlay(img, lms, w, h, score, tier):
                400,377,152,148,176,149,150,136,172,58,132,93,234,127,162,21,54,103,67,109,10]
     cv2.polylines(img, [np.array([pt(i) for i in jaw_idx], np.int32)], False, GOLD, 1)
 
+    # Watermark only — score is shown in the PDF, not baked into the image
     overlay = img.copy()
-    cv2.rectangle(overlay, (0, 0), (250, 70), (0, 0, 0), -1)
+    cv2.rectangle(overlay, (0, 0), (145, 28), (0, 0, 0), -1)
     img[:] = cv2.addWeighted(overlay, 0.55, img, 0.45, 0)
-    cv2.putText(img, f"Facedex: {score}/10  {tier}", (10, 28), cv2.FONT_HERSHEY_SIMPLEX, 0.72, GOLD, 2)
-    cv2.putText(img, "facedex.ai", (10, 56), cv2.FONT_HERSHEY_SIMPLEX, 0.5, CYAN, 1)
+    cv2.putText(img, "facedex.ai", (8, 20), cv2.FONT_HERSHEY_SIMPLEX, 0.52, CYAN, 1)
