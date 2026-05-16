@@ -1,0 +1,7 @@
+python-telegram-bot[payments]==22.7
+opencv-python-headless
+mediapipe
+Pillow
+reportlab
+numpy
+scipy

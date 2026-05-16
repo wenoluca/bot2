@@ -1,45 +1,48 @@
-# [Project name]
+# LooksMaxxing AI Bot
 
-_Replace the heading above with the project's name, and this line with one sentence describing what this app does for users._
+A Telegram bot that analyzes facial features using computer vision and generates a detailed PDF report with scores, measurements, and personalized looksmaxxing advice. Paid feature using Telegram Stars (50 Stars per report).
 
 ## Run & Operate
 
-- `pnpm --filter @workspace/api-server run dev` — run the API server (port 5000)
-- `pnpm run typecheck` — full typecheck across all packages
-- `pnpm run build` — typecheck + build all packages
-- `pnpm --filter @workspace/api-spec run codegen` — regenerate API hooks and Zod schemas from the OpenAPI spec
-- `pnpm --filter @workspace/db run push` — push DB schema changes (dev only)
-- Required env: `DATABASE_URL` — Postgres connection string
+- `cd bot/src && python bot.py` — run the Telegram bot (via "LooksMaxxing Bot" workflow)
+- Required env: `TELEGRAM_BOT_TOKEN` — Telegram bot token from @BotFather
 
 ## Stack
 
-- pnpm workspaces, Node.js 24, TypeScript 5.9
-- API: Express 5
-- DB: PostgreSQL + Drizzle ORM
-- Validation: Zod (`zod/v4`), `drizzle-zod`
-- API codegen: Orval (from OpenAPI spec)
-- Build: esbuild (CJS bundle)
+- Python 3.11
+- python-telegram-bot 22.7 (with Telegram Stars payments)
+- MediaPipe 0.10 (Tasks API — FaceLandmarker) for facial landmark detection
+- OpenCV (opencv-python-headless) for image processing
+- ReportLab for PDF generation
+- NumPy / SciPy
 
 ## Where things live
 
-_Populate as you build — short repo map plus pointers to the source-of-truth file for DB schema, API contracts, theme files, etc._
+- `bot/src/bot.py` — Main bot logic, handlers, payment flow
+- `bot/src/face_analyzer.py` — Facial geometry analysis (golden ratio, symmetry, thirds, canthal tilt, jaw)
+- `bot/src/pdf_generator.py` — PDF report generation with dark theme, score bars, advice
+- `bot/src/payments.py` — Payment constants (50 Stars per report)
+- `bot/src/storage.py` — Pending photo persistence (file-based JSON)
+- `bot/assets/face_landmarker.task` — MediaPipe face landmarker model (3.6MB)
+- `bot/data/` — Runtime storage (gitignored)
 
 ## Architecture decisions
 
-_Populate as you build — non-obvious choices a reader couldn't infer from the code (3-5 bullets)._
+- MediaPipe 0.10 Tasks API (not the old `solutions` API) — requires model file download
+- Telegram Stars (XTR currency) for payments — no external payment processor needed
+- Photo stored by Telegram file_id; analysis runs after payment confirmed
+- Analysis runs in asyncio thread pool executor to avoid blocking the event loop
+- Pre-check face detection before asking for payment (free gate)
 
 ## Product
 
-_Describe the high-level user-facing capabilities of this app once they exist._
-
-## User preferences
-
-_Populate as you build — explicit user instructions worth remembering across sessions._
+Users send a front-facing photo to the bot. A free face detection check runs first. If a face is found, they pay 50 Telegram Stars. After payment, the bot runs full facial geometry analysis and returns:
+1. An annotated photo with landmark overlays and score overlay
+2. A dark-themed PDF report with scores, measurements table, bar charts, and personalized advice
 
 ## Gotchas
 
-_Populate as you build — sharp edges, "always run X before Y" rules._
-
-## Pointers
-
-- See the `pnpm-workspace` skill for workspace structure, TypeScript setup, and package details
+- Always run `python bot.py` from `bot/src/` so relative paths to `../assets/` resolve correctly
+- MediaPipe Tasks API requires the `.task` model file — it's at `bot/assets/face_landmarker.task`
+- Telegram Stars payments use currency `"XTR"` — do not use `provider_token` (leave empty)
+- `python-telegram-bot[payments]` extra is required for `LabeledPrice` and invoice support
