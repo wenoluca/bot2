@@ -201,7 +201,7 @@ def generate_pdf(metrics: FaceMetrics, username: str = "User") -> bytes:
             except Exception:
                 c = TEXT_LIGHT
             return Paragraph(
-                f'<font color="#{c.hexval()[1:]}" size="11"><b>{value}</b></font>',
+                f'<font color="#{c.hexval()[2:]}" size="11"><b>{value}</b></font>',
                 ParagraphStyle("cs", alignment=TA_CENTER, fontName="Helvetica-Bold"),
             )
         if col_idx == 2 and row_idx > 0:
