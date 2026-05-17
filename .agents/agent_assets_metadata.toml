@@ -1,5 +1,10 @@
 uploads = []
-generated = []
+
+[[generated]]
+id = "HLkCtSThInilnGVVTRYEL"
+uri = "file://attached_assets/ideal_face_10.png"
+type = "image"
+title = "ideal male face 10/10 metrics"
 
 [[outputs]]
 id = "PaOgP44Rbhy6qfV0K0hax"
@@ -12,3 +17,9 @@ id = "Aqn0scHcD1nc18X35uKMx"
 uri = "file://bot/assets/example_full.pdf"
 type = "pdf"
 title = "Полный разбор — фикс метрик"
+
+[[outputs]]
+id = "11dP1bqie_reJtTYXg-ET"
+uri = "file://attached_assets/ideal_face_10.png"
+type = "image"
+title = "Идеальное лицо — 10/10 по метрикам Facedex"
