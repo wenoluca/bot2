@@ -23,7 +23,7 @@ FARKAS = {
     "vertical_balance":     (0.728, 0.110),  # 0.042 × 2.6 — шире норма для мужских лиц
     "cheek_jaw":            (1.356, 0.209),  # 0.095 × 2.2
     "eye_to_face":          (0.223, 0.040),  # 0.018 × 2.2
-    "inner_eye_to_face":    (0.271, 0.048),  # 0.022 × 2.2
+    "inner_eye_to_face":    (0.271, 0.085),  # шире std — MediaPipe inner corner варьируется
     "canthal_tilt":         (0.036, 0.055),  # 0.025 × 2.2
     "nose_to_face":         (0.234, 0.046),  # 0.021 × 2.2
     "mouth_to_face":        (0.403, 0.062),  # 0.028 × 2.2
@@ -105,51 +105,50 @@ def _midpoint(p1, p2):
     return ((p1[0] + p2[0]) / 2, (p1[1] + p2[1]) / 2)
 
 
-def _sigma_score(value, mean, std, direction="both", min_score=3.5):
+def _sigma_score(value, mean, std, direction="both", min_score=4.5):
     """
-    Оценка 3.5–10 по σ от нормы Фаркаса.
+    Оценка 4.5–10 по σ от нормы Фаркаса.
 
-    Базовая точка: mean (Farkas avg) → 6.5 (нормальное/гармоничное лицо).
+    Базовая точка: mean (Farkas avg) → 7.0 (нормальное/гармоничное лицо).
+    Среднестатистическое лицо НЕ должно быть "ниже среднего" — оно и есть норма.
 
     direction="both":
-        Симметричный штраф в обе стороны: −1.5 балла / σ.
-        0σ = 6.5 | 1σ = 5.0 | 2σ = 3.5 (пол).
-        Подходит для метрик без явного «лучше больше/меньше».
+        Симметричный штраф: −1.0 балла / σ.
+        0σ=7.0 | 1σ=6.0 | 2σ=5.0 | 3σ=4.5(пол).
 
-    direction="up"  (большее значение лучше — напр. широкая челюсть, hunter eyes):
+    direction="up"  (большее значение лучше — hunter eyes, широкая челюсть):
         Выше нормы → бонус +1.5/σ (до 10).
-        Ниже нормы → мягкий штраф −0.7/σ (широкий диапазон нормы).
+        Ниже нормы → мягкий штраф −0.6/σ (нейтральный ≠ плохо).
 
-    direction="down" (меньшее значение лучше — напр. узкий нос, V-подбородок):
+    direction="down" (меньшее значение лучше — узкий нос, V-подбородок):
         Ниже нормы → бонус +1.5/σ (до 10).
-        Выше нормы → мягкий штраф −0.7/σ.
+        Выше нормы → мягкий штраф −0.6/σ.
 
-    Целевые диапазоны итогового score:
-        Средние метрики       → 5–6
-        Нормальные/гармоничные → 6.5–7.5
-        Хорошие               → 7.5–8.5
-        Элитные (редкие)      → 9+
+    Целевые диапазоны:
+        Строго норма (0σ)      → 7.0
+        Хорошее (1σ в нужную)  → 8.5
+        Элитное (2σ в нужную)  → 10.0
+        Нейтральное (1σ, both) → 6.0
+        Минимум                → 4.5
     """
     if std == 0:
         return 7.0
     z = (value - mean) / std
 
     if direction == "both":
-        # −1.0/σ: более мягкий штраф, пол достигается только при экстремальных отклонениях
-        # 0σ=6.5 | 1σ=5.5 | 2σ=4.5 | 3σ=3.5(пол)
-        score = 6.5 - abs(z) * 1.0
+        score = 7.0 - abs(z) * 1.0
 
     elif direction == "up":
         if z >= 0:
-            score = 6.5 + z * 1.5     # бонус за хорошее значение
+            score = 7.0 + z * 1.5
         else:
-            score = 6.5 + z * 0.5     # мягкий штраф (нейтральный ≠ плохо)
+            score = 7.0 + z * 0.6
 
     else:  # direction == "down"
         if z <= 0:
-            score = 6.5 + (-z) * 1.5  # бонус за маскулинное значение
+            score = 7.0 + (-z) * 1.5
         else:
-            score = 6.5 - z * 0.5     # мягкий штраф
+            score = 7.0 - z * 0.6
 
     return round(max(min_score, min(10.0, score)), 2)
 
@@ -466,9 +465,39 @@ def analyze_face(image_bytes: bytes) -> Optional[FaceMetrics]:
         + brow_height_score      * weights["brow"]
         + golden_ratio_score     * weights["golden_ratio"]
     )
-    # normalize: weighted avg already on 1.5–10 scale
     weight_total = sum(weights.values())
-    overall = round(max(1.5, min(10.0, weighted / weight_total)), 2)
+    base_overall = weighted / weight_total
+
+    # ── Бонус за межметрическую гармонию ─────────────────────────────────────
+    # Когда несколько ключевых метрик одновременно высоки, лицо воспринимается
+    # значительно привлекательнее, чем простое среднее — эффект синергии.
+    all_metric_scores = [
+        symmetry_score, face_proportions_score, thirds_score, canthal_tilt_score,
+        cheekbones_score, eyes_score, eye_distance_score, nose_score, lips_score,
+        nose_length_score, chin_length_score, chin_contour_score, nose_to_mouth_score,
+        biocular_score, forehead_score, lip_fullness_score, lip_ratio_score,
+        jaw_to_mouth_score, eye_shape_score, brow_height_score,
+    ]
+    above_norm = sum(1 for s in all_metric_scores if s >= 7.0)
+    harmony_bonus = 0.0
+    if above_norm >= 10:
+        harmony_bonus = 0.25
+    if above_norm >= 13:
+        harmony_bonus = 0.50
+    if above_norm >= 16:
+        harmony_bonus = 0.80
+
+    # Синергия пар: высокая симметрия + пропорции = запоминающееся гармоничное лицо
+    if symmetry_score >= 8.0 and face_proportions_score >= 8.0:
+        harmony_bonus += 0.20
+    # Hunter eyes + скулы = мощный доминантный вид
+    if canthal_tilt_score >= 8.0 and cheekbones_score >= 7.5:
+        harmony_bonus += 0.15
+    # Челюсть + подбородок = чёткий мужской контур
+    if jaw_to_mouth_score >= 7.5 and chin_length_score >= 7.5:
+        harmony_bonus += 0.10
+
+    overall = round(max(1.5, min(10.0, base_overall + harmony_bonus)), 2)
 
     grade = _get_grade(overall)
     tier  = _get_tier(overall)

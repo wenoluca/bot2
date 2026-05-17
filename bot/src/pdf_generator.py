@@ -684,15 +684,15 @@ METRIC_ORDER_FULL = [
 ]
 
 BRIEF_GRID = [
-    ("symmetry_score",        "Симметрия"),
-    ("vertical_balance_score","Вертикальный баланс"),
-    ("cheekbones_score",      "Скулы / челюсть"),
-    ("eyes_score",            "Размер глаз"),
-    ("canthal_tilt_score",    "Наклон глаз"),
-    ("nose_score",            "Ширина носа"),
-    ("lip_fullness_score",    "Полнота губ"),
-    ("chin_contour_score",    "Контур челюсти"),
-    ("brow_height_score",     "Высота бровей"),
+    ("symmetry_score",        "Симметрия",          "Зеркальность левой и правой сторон"),
+    ("vertical_balance_score","Вертикальный баланс","Средняя vs нижняя треть лица"),
+    ("cheekbones_score",      "Скулы / челюсть",    "Ширина скул к ширине челюсти"),
+    ("eyes_score",            "Размер глаз",        "Ширина глаза к ширине лица"),
+    ("canthal_tilt_score",    "Наклон глаз",        "Кантальный тильт — hunter eyes"),
+    ("nose_score",            "Ширина носа",        "Ширина носа к ширине лица"),
+    ("lip_fullness_score",    "Полнота губ",        "Объём губ к ширине рта"),
+    ("chin_contour_score",    "Контур челюсти",     "Сужение подбородка к линии челюсти"),
+    ("brow_height_score",     "Высота бровей",      "Расстояние от брови до глаза"),
 ]
 
 # Советы по слабым метрикам (обновлённые — мужской уклон)
@@ -825,13 +825,13 @@ def generate_brief_pdf(metrics: FaceMetrics, name: str = "") -> bytes:
     # 3×3 сетка
     y += 4*mm
     card_w = (BW - 2 * 4*mm) / 3
-    card_h = 36*mm
+    card_h = 42*mm
     row_gap = 3*mm
 
     for row in range(3):
         for col in range(3):
             idx = row * 3 + col
-            field, label = BRIEF_GRID[idx]
+            field, label, desc = BRIEF_GRID[idx]
             score = getattr(metrics, field, 5.0)
             sc_col = _sc(score)
             lv = _lv(score)
@@ -842,7 +842,7 @@ def generate_brief_pdf(metrics: FaceMetrics, name: str = "") -> bytes:
             _rect(c, cx, cy, card_w, card_h, fill=CARD, stroke=LINE, lw=0.5)
 
             _para(c, label, cx + 3, cy + 4, card_w - 6, 10,
-                  font=R, size=8, color=DIM, align=TA_CENTER)
+                  font=B, size=8, color=WHITE_TXT, align=TA_CENTER)
 
             bar_w = (card_w - 10) * score / 10
             _rect(c, cx + 5, cy + 15, card_w - 10, 3, fill=SURFACE)
@@ -850,8 +850,12 @@ def generate_brief_pdf(metrics: FaceMetrics, name: str = "") -> bytes:
 
             _txt(c, f"{score:.2f}", cx + card_w / 2, cy + 23*mm,
                  font=B, size=20, color=sc_col, align="center")
-            _txt(c, lv, cx + card_w / 2, cy + 28*mm,
+            _txt(c, lv, cx + card_w / 2, cy + 29*mm,
                  font=R, size=7.5, color=sc_col, align="center")
+
+            # Описание метрики под уровнем
+            _para(c, desc, cx + 3, cy + 32*mm, card_w - 6, 9,
+                  font=R, size=6.5, color=DIM, align=TA_CENTER)
 
     _footer(c, 1, 2)
     c.showPage()
@@ -1310,34 +1314,35 @@ def _full_metric_page(c, metrics, metric_tuple, m_idx, page_num):
     # ══════════════════════════════════════════════════════════════════════════
     # ТЕКСТ — под верхней секцией
     # ══════════════════════════════════════════════════════════════════════════
-    y += panel_h + 5*mm
+    y += panel_h + 4*mm
 
     # Генерируем динамический текст с реальными значениями
     final_body = _build_dynamic_body(field, body_text, your_val, norm_val, norm_std, score)
 
-    _para(c, final_body, ML, y, BW, 44,
+    body_frame_h = 42*mm   # ~9 строк при leading=14pt
+    _para(c, final_body, ML, y, BW, body_frame_h,
           font=R, size=9.5, color=WHITE_TXT, align=TA_JUSTIFY, leading=14)
-    y += 47*mm
+    y += body_frame_h + 3*mm
 
     # ── Блок влияния ──────────────────────────────────────────────────────────
-    infl_h = 22*mm
-    _rect(c, ML, y, BW, infl_h, fill=INFL_BG, stroke=INFL_BD, lw=1.2)
-    # Левый акцент-бар
+    infl_h = 38*mm
+    _rect(c, ML, y, BW, infl_h, fill=INFL_BG, stroke=INFL_BD, lw=1.5)
     _rect(c, ML, y, 4, infl_h, fill=INFL_BD)
     _txt(c, "ВЛИЯНИЕ", ML + 10, y + 5*mm, font=B, size=9, color=INFL_BD)
-    _para(c, influence_text, ML + 10, y + 7*mm, BW - 15, infl_h - 9*mm,
-          font=R, size=9.5, color=WHITE_TXT, align=TA_JUSTIFY)
+    # Текстовый фрейм под заголовком «ВЛИЯНИЕ»
+    _para(c, influence_text, ML + 10, y + 8*mm, BW - 16, infl_h - 10*mm,
+          font=R, size=9.5, color=WHITE_TXT, align=TA_JUSTIFY, leading=14)
 
     # ── КАК УЛУЧШИТЬ ─────────────────────────────────────────────────────────
-    y += infl_h + 5*mm
+    y += infl_h + 4*mm
     advice = METRIC_ADVICE.get(field, "")
-    if advice and y < H - 42*mm:
-        _rect(c, ML, y, BW, 6*mm, fill=PANEL)
-        _rect(c, ML, y, 4, 6*mm, fill=C_HIGH)
-        _txt(c, "КАК УЛУЧШИТЬ", ML + 10, y + 4.2*mm, font=B, size=8.5, color=C_HIGH)
-        y += 8*mm
-        _para(c, advice, ML, y, BW, 30,
-              font=R, size=9.5, color=DIM, align=TA_JUSTIFY)
+    if advice:
+        _rect(c, ML, y, BW, 7*mm, fill=PANEL)
+        _rect(c, ML, y, 4, 7*mm, fill=C_HIGH)
+        _txt(c, "КАК УЛУЧШИТЬ", ML + 10, y + 4.8*mm, font=B, size=8.5, color=C_HIGH)
+        y += 9*mm
+        _para(c, advice, ML, y, BW, 44*mm,
+              font=R, size=9.5, color=DIM, align=TA_JUSTIFY, leading=14)
 
     _footer(c, page_num, 25)
 
@@ -1381,13 +1386,13 @@ def generate_full_pdf(metrics: FaceMetrics, name: str = "") -> bytes:
     for wf, ws in weak_5[:3]:
         wn = name_map[wf]
         advice = METRIC_ADVICE.get(wf, "Работай над этой метрикой системно.")
-        _rect(c, ML, y23, BW, 6*mm, fill=PANEL)
-        _rect(c, ML, y23, 3, 6*mm, fill=C_LOW)
-        _txt(c, f"{wn}  —  {ws:.2f} / 10", ML + 7, y23 + 4*mm, font=B, size=9.5, color=WHITE_TXT)
-        y23 += 8*mm
-        _para(c, advice, ML, y23, BW, 28,
-              font=R, size=9.5, color=DIM, align=TA_JUSTIFY)
-        y23 += 32*mm
+        _rect(c, ML, y23, BW, 7*mm, fill=PANEL)
+        _rect(c, ML, y23, 4, 7*mm, fill=C_LOW)
+        _txt(c, f"{wn}  —  {ws:.2f} / 10", ML + 10, y23 + 4.8*mm, font=B, size=9.5, color=WHITE_TXT)
+        y23 += 9*mm
+        _para(c, advice, ML, y23, BW, 44*mm,
+              font=R, size=9.5, color=DIM, align=TA_JUSTIFY, leading=14)
+        y23 += 48*mm
 
     _footer(c, 23, 25)
     c.showPage()
@@ -1428,15 +1433,15 @@ def generate_full_pdf(metrics: FaceMetrics, name: str = "") -> bytes:
     ]
 
     for btitle, btext in improvement_blocks:
-        if y24 > H - 55*mm:
+        if y24 > H - 60*mm:
             break
-        _rect(c, ML, y24, BW, 6*mm, fill=PANEL)
-        _rect(c, ML, y24, 3, 6*mm, fill=INFL_BD)
-        _txt(c, btitle, ML + 7, y24 + 4*mm, font=B, size=9.5, color=WHITE_TXT)
-        y24 += 8*mm
-        _para(c, btext, ML, y24, BW, 28,
-              font=R, size=9.5, color=DIM, align=TA_JUSTIFY)
-        y24 += 32*mm
+        _rect(c, ML, y24, BW, 7*mm, fill=PANEL)
+        _rect(c, ML, y24, 4, 7*mm, fill=INFL_BD)
+        _txt(c, btitle, ML + 10, y24 + 4.8*mm, font=B, size=9.5, color=WHITE_TXT)
+        y24 += 9*mm
+        _para(c, btext, ML, y24, BW, 36*mm,
+              font=R, size=9.5, color=DIM, align=TA_JUSTIFY, leading=14)
+        y24 += 40*mm
 
     _footer(c, 24, 25)
     c.showPage()
