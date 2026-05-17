@@ -52,7 +52,14 @@ def _is_admin(user) -> bool:
 
 
 def _tier_label(t):
-    return {"HTN":"High Tier Normie","MTN":"Mid Tier Normie","LTN":"Low Tier Normie"}.get(t, t)
+    return {
+        "True Adam": "True Adam",
+        "Chad":      "Chad",
+        "Chadlite":  "Chadlite",
+        "HTN":       "High Tier Normie",
+        "MTN":       "Mid Tier Normie",
+        "LTN":       "Low Tier Normie",
+    }.get(t, t)
 
 
 # ════════════════════════════════════════════════════════════════════════════
@@ -105,7 +112,7 @@ BRIEF_TEXT = (
     "🔸 <b>Итоговая оценка гармонии:</b>\n"
     "математический балл по геометрии лица — насколько твои пропорции близки к норме.\n\n"
     "🔸 <b>Тир по looksmaxing-шкале:</b>\n"
-    "LTN, MTN или HTN — твоя категория внешности.\n\n"
+    "LTN / MTN / HTN / Chadlite / Chad / True Adam — твоя категория внешности.\n\n"
     "🔸 <b>Оценка по ключевым параметрам:</b>\n"
     "глаза, нос, губы, скулы, челюсть, брови, симметрия и баланс — где у тебя сильные стороны и где оценка проседает."
     "</blockquote>\n\n"

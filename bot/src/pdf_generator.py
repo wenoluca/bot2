@@ -81,29 +81,30 @@ def _lv_desc(s):
     return "Приоритетная зона роста, заметно снижает гармонию"
 
 def _tier_label(t):
-    return {"HTN": "High Tier Normie",
-            "MTN": "Mid Tier Normie",
-            "LTN": "Low Tier Normie"}.get(t, t)
+    return {
+        "True Adam": "True Adam",
+        "Chad":      "Chad",
+        "Chadlite":  "Chadlite",
+        "HTN":       "High Tier Normie",
+        "MTN":       "Mid Tier Normie",
+        "LTN":       "Low Tier Normie",
+    }.get(t, t)
 
 def _top_pct(s):
-    if s >= 9.5: return "1%"
-    if s >= 9.0: return "3%"
-    if s >= 8.5: return "7%"
-    if s >= 8.0: return "15%"
-    if s >= 7.5: return "25%"
-    if s >= 7.0: return "35%"
-    if s >= 6.5: return "45%"
-    return "50–60%"
+    if s >= 9.0: return "1%"
+    if s >= 8.0: return "5%"
+    if s >= 7.5: return "15%"
+    if s >= 6.0: return "40%"
+    if s >= 4.5: return "70%"
+    return "90%+"
 
 def _level_str(s):
-    if s >= 9.5: return "Исключительно выше среднего"
-    if s >= 9.0: return "Значительно выше среднего"
-    if s >= 8.5: return "Выше среднего"
-    if s >= 8.0: return "Немного выше среднего"
-    if s >= 7.0: return "В пределах нормы"
-    if s >= 5.5: return "Средний"
-    if s >= 4.0: return "Ниже среднего"
-    return "Значительно ниже среднего"
+    if s >= 9.0: return "True Adam — Топ 1% мужчин"
+    if s >= 8.0: return "Chad — Топ 5%"
+    if s >= 7.5: return "Chadlite — Топ 15%"
+    if s >= 6.0: return "HTN — High Tier Normie"
+    if s >= 4.5: return "MTN — Mid Tier Normie"
+    return "LTN — Low Tier Normie"
 
 
 def _para(c, text, x, y_top, w, h,

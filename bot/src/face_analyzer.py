@@ -175,33 +175,33 @@ def _golden_ratio_score(a, b):
 
 
 def _get_tier(score: float) -> str:
-    if score >= 7.5:
+    if score >= 9.0:
+        return "True Adam"
+    elif score >= 8.0:
+        return "Chad"
+    elif score >= 7.5:
+        return "Chadlite"
+    elif score >= 6.0:
         return "HTN"
-    elif score >= 5.5:
+    elif score >= 4.5:
         return "MTN"
     else:
         return "LTN"
 
 
 def _get_grade(score: float) -> str:
-    if score >= 9.5:
-        return "SSS — Легендарная внешность"
-    elif score >= 9.0:
-        return "SS — Исключительная красота"
-    elif score >= 8.5:
-        return "S — Высокая привлекательность"
+    if score >= 9.0:
+        return "True Adam — Топ 1%"
     elif score >= 8.0:
-        return "A+ — Выше среднего"
-    elif score >= 7.0:
-        return "A — Привлекательный"
+        return "Chad — Топ 5%"
+    elif score >= 7.5:
+        return "Chadlite — Топ 15%"
     elif score >= 6.0:
-        return "B — Чуть выше нормы"
-    elif score >= 5.0:
-        return "C — Средний"
-    elif score >= 4.0:
-        return "D — Ниже среднего"
+        return "HTN — High Tier Normie"
+    elif score >= 4.5:
+        return "MTN — Mid Tier Normie"
     else:
-        return "E — Требует работы"
+        return "LTN — Low Tier Normie"
 
 
 def _get_landmarker():
