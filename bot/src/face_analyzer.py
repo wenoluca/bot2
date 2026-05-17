@@ -422,26 +422,29 @@ def analyze_face(image_bytes: bytes) -> Optional[FaceMetrics]:
     balance_score  = round((golden_ratio_score + symmetry_score + thirds_score) / 3.0, 2)
 
     # ── Итоговый балл (взвешенное среднее 20 метрик) ─────────────────────────
+    # Веса настроены под лукмаксинг-стандарты:
+    # — симметрия важна, но не доминирует (снижена с 12% → 7%)
+    # — кантальный тильт, челюсть, подбородок, форма глаз — усилены
     weights = {
-        "symmetry":         0.12,
+        "symmetry":         0.07,   # важна, но не главная
         "proportions":      0.08,
-        "thirds":           0.07,
-        "canthal":          0.10,
-        "cheekbones":       0.08,
+        "thirds":           0.06,
+        "canthal":          0.13,   # hunter eyes — ключевая метрика в лукмаксинге
+        "cheekbones":       0.09,   # скулы/челюсть — основа мужественности
         "eyes":             0.06,
-        "eye_distance":     0.05,
-        "nose":             0.05,
-        "mouth":            0.05,
-        "nose_length":      0.04,
-        "chin_length":      0.05,
+        "eye_distance":     0.04,
+        "nose":             0.04,
+        "mouth":            0.04,
+        "nose_length":      0.03,
+        "chin_length":      0.06,   # выраженный подбородок = плюс
         "chin_contour":     0.04,
-        "nose_to_mouth":    0.04,
-        "biocular":         0.04,
+        "nose_to_mouth":    0.03,
+        "biocular":         0.03,
         "forehead":         0.03,
         "lip_fullness":     0.03,
         "lip_ratio":        0.02,
-        "jaw_to_mouth":     0.03,
-        "eye_shape":        0.05,
+        "jaw_to_mouth":     0.06,   # ширина челюсти — важна в лукмаксинге
+        "eye_shape":        0.06,   # форма/разрез глаз
         "brow":             0.03,
         "golden_ratio":     0.03,
     }
