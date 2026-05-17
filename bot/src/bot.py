@@ -37,8 +37,8 @@ BOT_TOKEN  = os.environ["TELEGRAM_BOT_TOKEN"]
 MODEL_PATH = os.path.join(os.path.dirname(__file__), "..", "assets", "face_landmarker.task")
 ASSETS_DIR = os.path.join(os.path.dirname(__file__), "..", "assets")
 
-TRIBUTE_BRIEF_URL = "https://web.tribute.tg/p/w6R"
-TRIBUTE_FULL_URL  = "https://web.tribute.tg/p/w6V"
+TRIBUTE_BRIEF_URL = "https://t.me/tribute/app?startapp=dKmE"
+TRIBUTE_FULL_URL  = "https://t.me/tribute/app?startapp=dKmF"
 SUPPORT_URL       = "https://t.me/facedex_support"
 ADMIN_USERNAME    = "facedex_support"
 
@@ -98,7 +98,7 @@ BRIEF_TEXT = (
     "📍 <b>Главное меню  ›  Выбор тарифа  ›  Оплата</b>\n\n"
     "<blockquote>"
     "⚜️ <b>План</b>  —  Краткий разбор\n\n"
-    "💰 <b>Цена</b>  —  490 ₽"
+    "💰 <b>Цена</b>  —  199 ₽"
     "</blockquote>\n\n"
     "📚 <b>Что входит в один разбор:</b>\n\n"
     "<blockquote>"
@@ -121,7 +121,7 @@ FULL_TEXT = (
     "📍 <b>Главное меню  ›  Выбор тарифа  ›  Оплата</b>\n\n"
     "<blockquote>"
     "⚜️ <b>План</b>  —  Полный разбор\n\n"
-    "💰 <b>Цена</b>  —  990 ₽"
+    "💰 <b>Цена</b>  —  499 ₽"
     "</blockquote>\n\n"
     "📚 <b>Что входит в один разбор:</b>\n\n"
     "<blockquote>"
@@ -177,8 +177,8 @@ def kb_main():
 
 def kb_plans():
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton("📋  Краткий разбор  —  490 ₽", callback_data="plan_brief")],
-        [InlineKeyboardButton("📊  Полный разбор  —  990 ₽",  callback_data="plan_full")],
+        [InlineKeyboardButton("📋  Краткий разбор  —  199 ₽", callback_data="plan_brief")],
+        [InlineKeyboardButton("📊  Полный разбор  —  499 ₽",  callback_data="plan_full")],
         [InlineKeyboardButton("◀️  Назад",                     callback_data="menu_main")],
     ])
 
@@ -222,9 +222,9 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def _send_example_pdfs(chat_id: int, context: ContextTypes.DEFAULT_TYPE):
     for fname, caption, display_name in [
-        ("example_brief.pdf", "📋 <b>Краткий разбор</b> — пример отчёта (490 ₽)",
+        ("example_brief.pdf", "📋 <b>Краткий разбор</b> — пример отчёта (199 ₽)",
          "Краткий разбор — пример.pdf"),
-        ("example_full.pdf",  "📊 <b>Полный разбор</b> — пример отчёта (990 ₽)",
+        ("example_full.pdf",  "📊 <b>Полный разбор</b> — пример отчёта (499 ₽)",
          "Полный разбор — пример.pdf"),
     ]:
         path = os.path.join(ASSETS_DIR, fname)

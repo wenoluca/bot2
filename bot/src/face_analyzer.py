@@ -495,28 +495,150 @@ def analyze_face(image_bytes: bytes) -> Optional[FaceMetrics]:
     )
 
 
+def _draw_dashed_line(img, pt1, pt2, color, thickness=1, dash=8, gap=5):
+    """Draw a dashed line between two points."""
+    dx = pt2[0] - pt1[0]
+    dy = pt2[1] - pt1[1]
+    dist = math.sqrt(dx * dx + dy * dy)
+    if dist < 1:
+        return
+    step = dash + gap
+    n = int(dist / step)
+    for i in range(n + 1):
+        t0 = i * step / dist
+        t1 = min(1.0, (i * step + dash) / dist)
+        x0 = int(pt1[0] + dx * t0)
+        y0 = int(pt1[1] + dy * t0)
+        x1 = int(pt1[0] + dx * t1)
+        y1 = int(pt1[1] + dy * t1)
+        cv2.line(img, (x0, y0), (x1, y1), color, thickness)
+
+
 def _draw_overlay(img, lms, w, h, score, tier):
+    """
+    Рисует сетку измерений Фаркаса на тёмном фоне (без фото лица).
+    Стиль: пунктирные радиальные линии от ключевых точек, контуры глаз/носа/рта.
+    """
     def pt(idx):
         lm = lms[idx]
         return (int(lm.x * w), int(lm.y * h))
 
-    GOLD = (0, 210, 255)
-    CYAN = (200, 230, 0)
+    # ── Тёмный фон (без фото) ────────────────────────────────────────────────
+    canvas = np.full_like(img, 11)   # ~#0B0B0B
+    canvas[:, :, 0] = 11
+    canvas[:, :, 1] = 11
+    canvas[:, :, 2] = 15
 
-    for idx_list in [
+    # Цвета (BGR)
+    PINK   = (147, 110, 210)   # розово-лавандовый — основные линии
+    BRIGHT = (180, 140, 255)   # ярко-розовый — контуры
+    GOLD   = (50,  185, 210)   # золотисто-жёлтый — нос, брови, рот
+    DIM    = (55,  55,  70)    # тёмный — контур лица, оси
+
+    # ── Ключевые точки ────────────────────────────────────────────────────────
+    nose_tip       = pt(4)
+    nose_base      = pt(2)
+    nose_bridge    = pt(6)
+    left_eye_out   = pt(33)
+    left_eye_in    = pt(133)
+    right_eye_in   = pt(362)
+    right_eye_out  = pt(263)
+    left_brow_out  = pt(70)
+    left_brow_in   = pt(107)
+    right_brow_in  = pt(336)
+    right_brow_out = pt(300)
+    mouth_left     = pt(61)
+    mouth_right    = pt(291)
+    chin           = pt(152)
+    forehead       = pt(10)
+    left_cheek     = pt(234)
+    right_cheek    = pt(454)
+    left_jaw       = pt(172)
+    right_jaw      = pt(397)
+
+    brow_mid = (
+        (left_brow_in[0] + right_brow_in[0]) // 2,
+        (left_brow_in[1] + right_brow_in[1]) // 2,
+    )
+    mouth_mid = (
+        (mouth_left[0] + mouth_right[0]) // 2,
+        (mouth_left[1] + mouth_right[1]) // 2,
+    )
+
+    # ── 1. Контур лица (силуэт) — очень тонкий ──────────────────────────────
+    jaw_idx = [10,338,297,332,284,251,389,356,454,323,361,288,397,365,379,378,
+               400,377,152,148,176,149,150,136,172,58,132,93,234,127,162,21,54,103,67,109,10]
+    cv2.polylines(canvas, [np.array([pt(i) for i in jaw_idx], np.int32)], False, DIM, 1)
+
+    # ── 2. Вертикальная ось симметрии ────────────────────────────────────────
+    cx = nose_tip[0]
+    _draw_dashed_line(canvas, (cx, forehead[1] - 10), (cx, chin[1] + 10), DIM, 1, 12, 6)
+
+    # ── 3. Горизонтальные линии уровней (трети) ──────────────────────────────
+    xl, xr = left_cheek[0] - 15, right_cheek[0] + 15
+    for y in [brow_mid[1], nose_base[1], mouth_mid[1]]:
+        _draw_dashed_line(canvas, (xl, y), (xr, y), DIM, 1, 10, 6)
+
+    # ── 4. Радиальные линии от кончика носа ──────────────────────────────────
+    radial_from_tip = [
+        left_eye_out, left_eye_in, right_eye_in, right_eye_out,
+        left_brow_out, left_brow_in, right_brow_in, right_brow_out,
+        mouth_left, mouth_right,
+        chin, forehead,
+        left_cheek, right_cheek,
+    ]
+    for tgt in radial_from_tip:
+        _draw_dashed_line(canvas, nose_tip, tgt, PINK, 1, 7, 5)
+
+    # ── 5. Радиальные линии от основания носа ────────────────────────────────
+    for tgt in [mouth_left, mouth_right, chin, left_jaw, right_jaw,
+                left_cheek, right_cheek]:
+        _draw_dashed_line(canvas, nose_base, tgt, BRIGHT, 1, 5, 4)
+
+    # ── 6. Контуры глаз ──────────────────────────────────────────────────────
+    for eye_pts in [
         [33, 7, 163, 144, 145, 153, 154, 155, 133],
         [362, 382, 381, 380, 374, 373, 390, 249, 263],
     ]:
-        cv2.polylines(img, [np.array([pt(i) for i in idx_list], np.int32)], True, CYAN, 1)
+        cv2.polylines(canvas, [np.array([pt(i) for i in eye_pts], np.int32)], True, BRIGHT, 1)
 
-    cv2.polylines(img, [np.array([pt(i) for i in [61, 185, 40, 39, 37, 0, 267, 269, 270, 409, 291]], np.int32)], True, GOLD, 1)
-    cv2.polylines(img, [np.array([pt(i) for i in [168, 6, 197, 195, 5, 4]], np.int32)], False, CYAN, 1)
+    # ── 7. Нос (переносица → кончик) ─────────────────────────────────────────
+    cv2.polylines(canvas,
+                  [np.array([pt(i) for i in [168, 6, 197, 195, 5, 4]], np.int32)],
+                  False, GOLD, 1)
+    # Крылья носа
+    cv2.polylines(canvas,
+                  [np.array([pt(i) for i in [129, 102, 49, 48, 115]], np.int32)],
+                  False, GOLD, 1)
+    cv2.polylines(canvas,
+                  [np.array([pt(i) for i in [358, 331, 279, 278, 344]], np.int32)],
+                  False, GOLD, 1)
 
-    jaw_idx = [10,338,297,332,284,251,389,356,454,323,361,288,397,365,379,378,
-               400,377,152,148,176,149,150,136,172,58,132,93,234,127,162,21,54,103,67,109,10]
-    cv2.polylines(img, [np.array([pt(i) for i in jaw_idx], np.int32)], False, GOLD, 1)
+    # ── 8. Брови ─────────────────────────────────────────────────────────────
+    cv2.polylines(canvas,
+                  [np.array([pt(i) for i in [70, 63, 105, 66, 107]], np.int32)],
+                  False, GOLD, 1)
+    cv2.polylines(canvas,
+                  [np.array([pt(i) for i in [336, 296, 334, 293, 300]], np.int32)],
+                  False, GOLD, 1)
 
-    overlay = img.copy()
-    cv2.rectangle(overlay, (0, 0), (145, 28), (0, 0, 0), -1)
-    img[:] = cv2.addWeighted(overlay, 0.55, img, 0.45, 0)
-    cv2.putText(img, "facedex.ai", (8, 20), cv2.FONT_HERSHEY_SIMPLEX, 0.52, CYAN, 1)
+    # ── 9. Губы ───────────────────────────────────────────────────────────────
+    cv2.polylines(canvas,
+                  [np.array([pt(i) for i in
+                             [61, 185, 40, 39, 37, 0, 267, 269, 270, 409, 291]],
+                            np.int32)],
+                  True, GOLD, 1)
+
+    # ── 10. Ключевые точки (узловые) ─────────────────────────────────────────
+    key_pts = [nose_tip, nose_base, left_eye_in, right_eye_in,
+               left_eye_out, right_eye_out, mouth_left, mouth_right,
+               chin, brow_mid]
+    for kp in key_pts:
+        cv2.circle(canvas, kp, 3, BRIGHT, -1)
+        cv2.circle(canvas, kp, 5, PINK, 1)
+
+    # ── 11. Ватермарк ─────────────────────────────────────────────────────────
+    cv2.putText(canvas, "FACEDEX", (8, h - 10),
+                cv2.FONT_HERSHEY_SIMPLEX, 0.45, DIM, 1)
+
+    img[:] = canvas
