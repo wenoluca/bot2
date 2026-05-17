@@ -74,6 +74,7 @@ metrics = FaceMetrics(
         "cheek_symmetry":       9.80,
         "mouth_symmetry":       9.90,
         "cheek_jaw_ratio":      1.427,
+        "eye_to_face":          0.155,
         "nose_to_face":         0.223,
         "mouth_to_face":        0.392,
         "inner_eye_to_face":    0.318,

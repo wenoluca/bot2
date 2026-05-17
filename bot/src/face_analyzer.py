@@ -474,6 +474,7 @@ def analyze_face(image_bytes: bytes) -> Optional[FaceMetrics]:
             "cheek_symmetry":       round(cheek_sym * 10, 2),
             "mouth_symmetry":       round(mouth_sym * 10, 2),
             "cheek_jaw_ratio":      round(cheek_jaw_ratio, 3),
+            "eye_to_face":          round(eye_to_face, 3),
             "nose_to_face":         round(nose_to_face, 3),
             "mouth_to_face":        round(mouth_to_face, 3),
             "inner_eye_to_face":    round(inner_eye_to_face, 3),
@@ -523,11 +524,8 @@ def _draw_overlay(img, lms, w, h, score, tier):
         lm = lms[idx]
         return (int(lm.x * w), int(lm.y * h))
 
-    # ── Тёмный фон (без фото) ────────────────────────────────────────────────
-    canvas = np.full_like(img, 11)   # ~#0B0B0B
-    canvas[:, :, 0] = 11
-    canvas[:, :, 1] = 11
-    canvas[:, :, 2] = 15
+    # ── Затемнённая копия фото (лицо видно, сетка поверх) ──────────────────
+    canvas = cv2.addWeighted(img, 0.55, np.zeros_like(img), 0.45, 0)
 
     # Цвета (BGR)
     PINK   = (147, 110, 210)   # розово-лавандовый — основные линии

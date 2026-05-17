@@ -1,18 +1,19 @@
 """
-PDF-генератор Facedex — краткий и полный разбор.
-Дизайн по образцу Face Aura с 20 метриками Фаркаса.
+PDF-генератор Facedex — белая тема, точная копия дизайна Face Aura.
+Краткий разбор: 2 страницы.
+Полный разбор:  25 страниц.
 """
 import io
 import os
+import math
+
 from reportlab.lib.pagesizes import A4
-from reportlab.lib.styles import ParagraphStyle
 from reportlab.lib.units import mm
 from reportlab.lib import colors
-from reportlab.platypus import (
-    SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle,
-    HRFlowable, Image as RLImage, KeepTogether,
-)
-from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_RIGHT
+from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_RIGHT, TA_JUSTIFY
+from reportlab.lib.styles import ParagraphStyle
+from reportlab.platypus import Paragraph, Frame
+from reportlab.pdfgen import canvas as pdfgen_canvas
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
 from PIL import Image as PILImage
@@ -20,742 +21,1055 @@ from PIL import Image as PILImage
 from face_analyzer import FaceMetrics
 
 # ── Шрифты ───────────────────────────────────────────────────────────────────
-_FONT_PATH = os.path.join(os.path.dirname(__file__), "..", "assets", "DejaVuSans.ttf")
-pdfmetrics.registerFont(TTFont("DV",  _FONT_PATH))
-pdfmetrics.registerFont(TTFont("DVB", _FONT_PATH))
-REGULAR, BOLD = "DV", "DVB"
+_FP = os.path.join(os.path.dirname(__file__), "..", "assets", "DejaVuSans.ttf")
+try:
+    pdfmetrics.registerFont(TTFont("DV",  _FP))
+    pdfmetrics.registerFont(TTFont("DVB", _FP))
+except Exception:
+    pass
+R, B = "DV", "DVB"
 
-# ── Цвета ────────────────────────────────────────────────────────────────────
-BG     = colors.HexColor("#0B0B0F")
-PANEL  = colors.HexColor("#17171E")
-PANEL2 = colors.HexColor("#111116")
-GOLD   = colors.HexColor("#C9A84C")
-GOLDB  = colors.HexColor("#E8C96A")
-TEXT   = colors.HexColor("#EEEEF2")
-DIM    = colors.HexColor("#6A6A80")
-GREEN  = colors.HexColor("#4CAF50")
-ORANGE = colors.HexColor("#FF9800")
-RED    = colors.HexColor("#F44336")
-BORDER = colors.HexColor("#28283A")
-ACCENT = colors.HexColor("#1E1E2C")
-HEADER = colors.HexColor("#0D0D14")
-CYAN   = colors.HexColor("#64D2FF")
+# ── Размеры ───────────────────────────────────────────────────────────────────
+W, H = A4           # 595.28 × 841.89 pt
+ML = 20 * mm        # left margin
+MR = 20 * mm        # right margin
+MT = 16 * mm        # top margin
+MB = 14 * mm        # bottom margin
+BW = W - ML - MR   # body width ≈ 481 pt
 
-W, H  = A4
-BODY  = W - 36*mm
+# ── Цвета (белая тема) ────────────────────────────────────────────────────────
+WHITE   = colors.HexColor("#FFFFFF")
+BLACK   = colors.HexColor("#111111")
+GRAY    = colors.HexColor("#555555")
+DIM     = colors.HexColor("#888888")
+LGRAY   = colors.HexColor("#F5F5F5")
+LINE    = colors.HexColor("#DEDEDE")
+C_HIGH  = colors.HexColor("#1B5E20")   # зелёный
+C_MID   = colors.HexColor("#E65100")   # оранжевый
+C_LOW   = colors.HexColor("#B71C1C")   # красный
+INFL_BG = colors.HexColor("#EEF3FF")   # фон блока влияния
+INFL_BD = colors.HexColor("#1565C0")   # граница
+SCORE_BG = colors.HexColor("#FAFAFA")  # фон панели балла
 
+BOT    = "Facedex"
+HANDLE = "@facedex_bot"
 
-def _sc(s): return GREEN if s >= 7.5 else (ORANGE if s >= 5.5 else RED)
-def _sh(s): return "#4CAF50" if s >= 7.5 else ("#FF9800" if s >= 5.5 else "#F44336")
-def _bar(s, n=20): filled = round(s / 10 * n); return "█" * filled + "░" * (n - filled)
+# ── Вспомогательные ──────────────────────────────────────────────────────────
+def _c(y_top): return H - y_top          # from-top → canvas y
 
-def _level(s):
+def _sc(s):
+    if s >= 7.5: return C_HIGH
+    if s >= 5.5: return C_MID
+    return C_LOW
+
+def _lv(s):
     if s >= 9.0: return "Высоко"
     if s >= 7.5: return "Выше среднего"
     if s >= 5.5: return "Среднее"
     if s >= 4.0: return "Ниже среднего"
     return "Низко"
 
-def _dark_bg(canvas, doc):
-    canvas.saveState()
-    canvas.setFillColor(BG)
-    canvas.rect(0, 0, W, H, fill=1, stroke=0)
-    canvas.setFillColor(GOLD)
-    canvas.rect(0, H - 3, W, 3, fill=1, stroke=0)
-    canvas.setFillColor(GOLD)
-    canvas.rect(0, 0, W, 2, fill=1, stroke=0)
-    canvas.restoreState()
-
-def _s(name, **kw):
-    d = dict(fontName=REGULAR, textColor=TEXT, fontSize=10, leading=14, spaceAfter=0)
-    d.update(kw)
-    return ParagraphStyle(name, **d)
-
-def _make_doc(buf):
-    return SimpleDocTemplate(buf, pagesize=A4,
-        rightMargin=18*mm, leftMargin=18*mm,
-        topMargin=14*mm, bottomMargin=14*mm)
-
 def _tier_label(t):
-    return {
-        "HTN": "High Tier Normie",
-        "MTN": "Mid Tier Normie",
-        "LTN": "Low Tier Normie",
-    }.get(t, t)
+    return {"HTN": "High Tier Normie",
+            "MTN": "Mid Tier Normie",
+            "LTN": "Low Tier Normie"}.get(t, t)
 
-def _tier_sub(t):
-    return {
-        "HTN": "Топ 10% по геометрии лица",
-        "MTN": "Выше среднего по геометрии лица",
-        "LTN": "Средний диапазон геометрии лица",
-    }.get(t, "")
+def _top_pct(s):
+    if s >= 9.5: return "1%"; 
+    if s >= 9.0: return "3%"
+    if s >= 8.5: return "7%"
+    if s >= 8.0: return "15%"
+    if s >= 7.5: return "25%"
+    if s >= 7.0: return "35%"
+    if s >= 6.5: return "45%"
+    return "50–60%"
 
-def _photo(data, max_w=80*mm, max_h=90*mm):
-    try:
-        pil = PILImage.open(io.BytesIO(data))
-        iw, ih = pil.size
-        r = min(max_w / iw, max_h / ih)
-        img = RLImage(io.BytesIO(data), width=iw*r, height=ih*r)
-        img.hAlign = "CENTER"
-        return img
-    except Exception:
-        return None
-
-
-def _section(text):
-    return [
-        Spacer(1, 5*mm),
-        Paragraph(text, _s("sh", fontName=BOLD, fontSize=11, textColor=GOLDB, spaceAfter=1*mm)),
-        HRFlowable(width="100%", thickness=1, color=GOLD, spaceAfter=3*mm),
-    ]
+def _level_str(s):
+    if s >= 9.5: return "Исключительно выше среднего"
+    if s >= 9.0: return "Значительно выше среднего"
+    if s >= 8.5: return "Выше среднего"
+    if s >= 8.0: return "Немного выше среднего"
+    if s >= 7.0: return "В пределах нормы"
+    if s >= 5.5: return "Средний"
+    if s >= 4.0: return "Ниже среднего"
+    return "Значительно ниже среднего"
 
 
-def _score_badge(score, grade, tier):
-    """Бейдж с итоговым баллом, тиром и уровнем."""
-    col = _sc(score)
-    inner = Table([[
-        Paragraph(f"{score:.2f}", _s("num", fontName=BOLD, fontSize=40, textColor=col,
-                                     leading=46, alignment=TA_CENTER)),
-        Paragraph("из 10", _s("of", fontSize=11, textColor=DIM, leading=14)),
-    ]], colWidths=[42*mm, 20*mm])
-    inner.setStyle(TableStyle([
-        ("VALIGN", (0, 0), (-1, -1), "BOTTOM"),
-        ("LEFTPADDING", (0, 0), (-1, -1), 0),
-        ("RIGHTPADDING", (0, 0), (-1, -1), 0),
-        ("TOPPADDING", (0, 0), (-1, -1), 0),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
-    ]))
-
-    right_col = Table([[
-        Paragraph(grade, _s("gr", fontName=BOLD, fontSize=12, textColor=TEXT, leading=16)),
-    ], [
-        Paragraph(f"{tier}  —  {_tier_label(tier)}",
-                  _s("tr", fontSize=10, textColor=DIM, leading=14)),
-    ], [
-        Paragraph(_tier_sub(tier), _s("ts", fontSize=9, textColor=GOLD, leading=13)),
-    ]], colWidths=[None])
-    right_col.setStyle(TableStyle([
-        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-        ("LEFTPADDING", (0, 0), (-1, -1), 0),
-        ("RIGHTPADDING", (0, 0), (-1, -1), 0),
-        ("TOPPADDING", (0, 0), (-1, -1), 2),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 2),
-    ]))
-
-    badge = Table([[inner, right_col]], colWidths=[65*mm, None])
-    badge.setStyle(TableStyle([
-        ("BACKGROUND",    (0, 0), (-1, -1), ACCENT),
-        ("BOX",           (0, 0), (-1, -1), 1.5, GOLD),
-        ("VALIGN",        (0, 0), (-1, -1), "MIDDLE"),
-        ("TOPPADDING",    (0, 0), (-1, -1), 12),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 12),
-        ("LEFTPADDING",   (0, 0), (-1, -1), 14),
-        ("RIGHTPADDING",  (0, 0), (-1, -1), 14),
-        ("LINEAFTER",     (0, 0), (0, -1), 1.5, GOLD),
-    ]))
-    return badge
+def _para(c, text, x, y_top, w, h,
+          font=None, size=10, color=None, align=TA_LEFT, leading=None):
+    """Параграф с переносом через Frame+Paragraph."""
+    font = font or R
+    color = color or BLACK
+    leading = leading or round(size * 1.45)
+    st = ParagraphStyle("p", fontName=font, fontSize=size, textColor=color,
+                        leading=leading, alignment=align,
+                        leftIndent=0, rightIndent=0, spaceBefore=0, spaceAfter=0)
+    p = Paragraph(text, st)
+    fr = Frame(x, _c(y_top + h), w, h, showBoundary=0,
+               leftPadding=0, rightPadding=0, topPadding=0, bottomPadding=0)
+    fr.addFromList([p], c)
 
 
-def _mini_score_card(label, score):
-    """Карточка метрики 3x3 сетки (для краткого разбора)."""
-    col = _sc(score)
-    lvl = _level(score)
-    card = Table([[
-        Paragraph(label, _s("cl", fontSize=9, textColor=DIM, leading=12, alignment=TA_CENTER)),
-    ], [
-        Paragraph(f'<font color="{_sh(score)}" size="22"><b>{score:.2f}</b></font>',
-                  _s("cv", fontSize=22, fontName=BOLD, leading=26, alignment=TA_CENTER)),
-    ], [
-        Paragraph(lvl, _s("lv", fontSize=8, textColor=col, leading=11, alignment=TA_CENTER)),
-    ]], colWidths=[None])
-    card.setStyle(TableStyle([
-        ("BACKGROUND",    (0, 0), (-1, -1), PANEL),
-        ("BOX",           (0, 0), (-1, -1), 0.5, BORDER),
-        ("TOPPADDING",    (0, 0), (-1, -1), 8),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 8),
-        ("LEFTPADDING",   (0, 0), (-1, -1), 6),
-        ("RIGHTPADDING",  (0, 0), (-1, -1), 6),
-    ]))
-    return card
+def _hline(c, x, y_top, w, color=LINE, lw=0.5):
+    c.saveState()
+    c.setStrokeColor(color)
+    c.setLineWidth(lw)
+    c.line(x, _c(y_top), x + w, _c(y_top))
+    c.restoreState()
 
 
-def _metric_row(name, score, your_val, norm_val):
-    bar = _bar(score)
-    return [
-        Paragraph(name, _s("rn", fontSize=9, textColor=TEXT, leading=13)),
-        Paragraph(f'<font color="{_sh(score)}">{score:.2f}</font>',
-                  _s("rs", fontName=BOLD, fontSize=13, alignment=TA_CENTER, leading=16)),
-        Table([[
-            Paragraph(f'<font name="Courier" size="7" color="#C9A84C">{bar}</font>',
-                      _s("bar", fontSize=7, leading=10)),
-            Paragraph(
-                f'<font color="#6A6A80">Ваше: </font>{your_val}  '
-                f'<font color="#6A6A80">Норма: </font>{norm_val}',
-                _s("det", fontSize=7.5, textColor=TEXT, leading=11)),
-        ]], colWidths=[None]),
-    ]
+def _rect(c, x, y_top, w, h, fill=None, stroke=None, lw=0.5):
+    c.saveState()
+    if fill:   c.setFillColor(fill)
+    if stroke: c.setStrokeColor(stroke); c.setLineWidth(lw)
+    c.rect(x, _c(y_top + h), w, h,
+           fill=1 if fill else 0,
+           stroke=1 if stroke else 0)
+    c.restoreState()
 
 
-def _params_table(rows):
-    hdr = [
-        Paragraph("Параметр",   _s("h0", fontName=BOLD, fontSize=9, textColor=GOLDB)),
-        Paragraph("Балл",       _s("h1", fontName=BOLD, fontSize=9, textColor=GOLDB, alignment=TA_CENTER)),
-        Paragraph("Бар  /  Ваше значение  →  Норма",
-                  _s("h2", fontName=BOLD, fontSize=9, textColor=GOLDB)),
-    ]
-    tdata = [hdr] + [_metric_row(*r) for r in rows]
-    COL = [66*mm, 18*mm, 90*mm]
-    tbl = Table(tdata, colWidths=COL, repeatRows=1)
-    tbl.setStyle(TableStyle([
-        ("BACKGROUND",    (0, 0), (-1, 0), HEADER),
-        ("ROWBACKGROUNDS",(0, 1), (-1, -1), [PANEL, PANEL2]),
-        ("BOX",           (0, 0), (-1, -1), 0.6, GOLD),
-        ("INNERGRID",     (0, 0), (-1, -1), 0.3, BORDER),
-        ("VALIGN",        (0, 0), (-1, -1), "TOP"),
-        ("TOPPADDING",    (0, 0), (-1, -1), 6),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
-        ("LEFTPADDING",   (0, 0), (-1, -1), 7),
-        ("RIGHTPADDING",  (0, 0), (-1, -1), 5),
-    ]))
-    return tbl
+def _txt(c, text, x, y_top, font=None, size=10, color=None, align="left"):
+    font = font or R
+    color = color or BLACK
+    c.saveState()
+    c.setFont(font, size)
+    c.setFillColor(color)
+    cy = _c(y_top)
+    if align == "center": c.drawCentredString(x, cy, text)
+    elif align == "right": c.drawRightString(x, cy, text)
+    else: c.drawString(x, cy, text)
+    c.restoreState()
 
 
-def _meas_table(rows):
-    hdr = [Paragraph(h, _s(f"mh{i}", fontName=BOLD, fontSize=9, textColor=GOLDB,
-                            alignment=TA_LEFT if i % 2 == 0 else TA_CENTER))
-           for i, h in enumerate(["Параметр", "Значение", "Параметр", "Значение"])]
-    tdata = [hdr]
-    for r in rows:
-        tdata.append([
-            Paragraph(str(r[0]), _s("ml", fontSize=9, textColor=TEXT, leading=12)),
-            Paragraph(str(r[1]), _s("mv", fontName=BOLD, fontSize=9, textColor=GOLDB, alignment=TA_CENTER)),
-            Paragraph(str(r[2]), _s("mr", fontSize=9, textColor=TEXT, leading=12)),
-            Paragraph(str(r[3]), _s("mw", fontName=BOLD, fontSize=9, textColor=GOLDB, alignment=TA_CENTER)),
-        ])
-    tbl = Table(tdata, colWidths=[60*mm, 24*mm, 60*mm, 22*mm])
-    tbl.setStyle(TableStyle([
-        ("BACKGROUND",    (0, 0), (-1, 0), HEADER),
-        ("ROWBACKGROUNDS",(0, 1), (-1, -1), [PANEL, PANEL2]),
-        ("BOX",           (0, 0), (-1, -1), 0.6, GOLD),
-        ("INNERGRID",     (0, 0), (-1, -1), 0.3, BORDER),
-        ("VALIGN",        (0, 0), (-1, -1), "MIDDLE"),
-        ("TOPPADDING",    (0, 0), (-1, -1), 5),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
-        ("LEFTPADDING",   (0, 0), (-1, -1), 7),
-    ]))
-    return tbl
+def _footer(c, page_num, total, extra=""):
+    c.saveState()
+    c.setFont(R, 8)
+    c.setFillColor(DIM)
+    parts = [f"Telegram: {HANDLE}", f"{page_num} / {total}"]
+    if extra: parts.insert(1, extra)
+    c.drawCentredString(W / 2, MB / 2 + 2, "  ·  ".join(parts))
+    c.restoreState()
 
 
-def _advice_card(emoji, title, text):
-    return KeepTogether(Table([[
-        Paragraph(emoji, _s("ae", fontName=BOLD, fontSize=16, alignment=TA_CENTER,
-                             textColor=GOLDB, leading=20)),
-        Table([[
-            Paragraph(title, _s("at", fontName=BOLD, fontSize=10, textColor=GOLDB, leading=14)),
-            Paragraph(text,  _s("ab", fontSize=9, textColor=TEXT, leading=14)),
-        ]], colWidths=[None]),
-    ]], colWidths=[14*mm, None],
-        style=TableStyle([
-            ("BACKGROUND",   (0, 0), (-1, -1), PANEL),
-            ("BOX",          (0, 0), (-1, -1), 0.5, BORDER),
-            ("LINEAFTER",    (0, 0), (0, -1), 1.5, GOLD),
-            ("VALIGN",       (0, 0), (-1, -1), "TOP"),
-            ("LEFTPADDING",  (0, 0), (-1, -1), 8),
-            ("RIGHTPADDING", (0, 0), (-1, -1), 8),
-            ("TOPPADDING",   (0, 0), (-1, -1), 8),
-            ("BOTTOMPADDING",(0, 0), (-1, -1), 8),
-        ])))
+def _header(c, title_extra=""):
+    """Шапка страницы: логотип + handle."""
+    _txt(c, BOT, W / 2, MT + 5*mm, font=B, size=16, color=BLACK, align="center")
+    sub = f"Telegram: {HANDLE}"
+    if title_extra: sub = title_extra
+    _txt(c, sub, W / 2, MT + 9.5*mm, font=R, size=9, color=DIM, align="center")
+    _hline(c, ML, MT + 12*mm, BW, color=LINE, lw=0.7)
 
 
-def _advice(m: FaceMetrics):
-    tips = []
+# ── Данные метрик ─────────────────────────────────────────────────────────────
+FARKAS_NORMS = {
+    "symmetry":         ("Симметрия лица",            None,   None),
+    "face_proportions": ("Пропорции лица",            0.896,  "face_hw_ratio"),
+    "vertical_balance": ("Вертикальный баланс",       0.728,  "vert_balance"),
+    "cheekbones":       ("Баланс скул и челюсти",     1.356,  "cheek_jaw_ratio"),
+    "eyes":             ("Размер глаз",               0.223,  "eye_to_face"),
+    "eye_distance":     ("Расстояние между глазами",  0.271,  "inner_eye_to_face"),
+    "canthal_tilt":     ("Наклон глаз",               0.036,  "canthal_norm"),
+    "nose":             ("Ширина носа",               0.234,  "nose_to_face"),
+    "lips":             ("Ширина рта",                0.403,  "mouth_to_face"),
+    "nose_length":      ("Длина носа",                0.421,  "nose_len_ratio"),
+    "chin_length":      ("Длина подбородка",          0.283,  "chin_len_ratio"),
+    "chin_contour":     ("Контур подбородка",         0.630,  "chin_contour"),
+    "nose_to_mouth":    ("Нос к ширине рта",          0.583,  "nose_to_mouth"),
+    "biocular":         ("Биокулярная ширина",        0.713,  "biocular_width"),
+    "forehead":         ("Ширина лба",                0.919,  "forehead_ratio"),
+    "lip_fullness":     ("Полнота губ",               0.347,  "lip_fullness"),
+    "lip_ratio":        ("Пропорции губ",             0.639,  "lip_ratio"),
+    "jaw_to_mouth":     ("Челюсть к ширине рта",      1.810,  "jaw_to_mouth"),
+    "eye_shape":        ("Форма глаз",                0.285,  "eye_shape"),
+    "brow_height":      ("Высота бровей",             0.063,  "brow_dist_ratio"),
+}
 
-    # Кантальный тильт / глаза
-    if m.canthal_tilt_degrees >= 5:
-        tips.append(("👁", "Наклон глаз — хищный взгляд (hunter eyes)",
-                     f"Угол {m.canthal_tilt_degrees:+.1f}° — выраженные hunter eyes. "
-                     "Мьюинг и низкий % жира поддерживают этот эффект. "
-                     "Избегай пуфа под глазами: меньше соли, больше сна."))
-    elif m.canthal_tilt_degrees >= 0:
-        tips.append(("👁", "Наклон глаз — нейтральный",
-                     f"Угол {m.canthal_tilt_degrees:+.1f}°. "
-                     "Убирай отёки под глазами: ледяной кубик или нефритовый роллер утром. "
-                     "Мьюинг со временем поднимает средину лица."))
-    else:
-        tips.append(("👁", "Наклон глаз — зона работы",
-                     f"Угол {m.canthal_tilt_degrees:+.1f}°. "
-                     "Приоритет: убрать отёки (сон 8ч, нет соли, нет алкоголя). "
-                     "Роллер из нефрита по утрам. Мьюинг обязателен."))
+# Порядок 20 метрик: (score_field, meta_key, description_text, what_text, influence_text)
+METRICS_20 = [
+    ("symmetry_score",        "symmetry",
+     "Метрика оценивает, насколько зеркально совпадают левая и правая стороны лица по "
+     "ключевым парам контрольных точек. Отклонение считается как средняя разница расстояний "
+     "от центральной оси до симметричных пар точек. Даже наибольшее отклонение в пределах "
+     "нормы, как правило, незаметно невооружённым глазом и свидетельствует о генетическом здоровье.",
+     "Симметрия лица: насколько левая и правая стороны зеркальны",
+     "Высокая симметрия создаёт ощущение гармонии при первом взгляде на лицо. "
+     "Это одна из ключевых основ привлекательности, воспринимаемая как маркер биологического качества."),
 
-    # Симметрия
-    if m.symmetry_score >= 8.5:
-        tips.append(("🪞", "Симметрия — высокая",
-                     "Не спи постоянно на одной стороне. "
-                     "Следи за прикусом — неравномерный жевательный тонус смещает симметрию."))
-    else:
-        tips.append(("🪞", "Симметрия — есть асимметрия",
-                     "Жуй поровну с обеих сторон. Сон на спине сохраняет симметрию. "
-                     "Проверь прикус у ортодонта — это главная причина асимметрии лица."))
+    ("face_proportions_score","face_proportions",
+     "Метрика измеряет отношение высоты лица (от переносицы до подбородка) к ширине скул. "
+     "Твоё значение сравнивается с антропометрической нормой Фаркаса. "
+     "Лица с соотношением, близким к медиане, оцениваются как наиболее привлекательные.",
+     "Высота лица / ширина скул",
+     "Гармоничная форма лица обеспечивает нейтральный, приятный фон для остальных черт. "
+     "Ни одна зона не перетягивает внимание, что позволяет выразительным глазам и скулам доминировать."),
 
-    # Скулы и челюсть
-    if m.cheekbones_score >= 8:
-        tips.append(("🦴", "Скулы и линия челюсти — выразительные",
-                     "Стрижка с выбритыми висками (андеркат, тейпер) подчёркивает контур. "
-                     "Держи % жира в теле ниже 15% — это делает скулы и челюсть рельефными."))
-    else:
-        tips.append(("💪", "Линия челюсти — есть потенциал",
-                     "Три ключевых инструмента: 1) мьюинг, 2) жёсткая жвачка Falim ежедневно, "
-                     "3) снижение % жира. Стрижка с длинными висками скрывает нечёткий контур."))
+    ("vertical_balance_score","vertical_balance",
+     "Метрика сравнивает среднюю треть лица (переносица → основание носа) с нижней третью "
+     "(нос → подбородок). Отклонение от нормы вниз означает более длинную нижнюю часть, "
+     "что придаёт лицу волевой характер. Отклонение вверх — более длинную среднюю часть.",
+     "Средняя треть лица / нижняя треть лица",
+     "Выраженная нижняя треть усиливает восприятие уверенности и зрелости. "
+     "В сочетании с острыми скулами это формирует цельный мужественный образ."),
 
-    # Нос
-    if m.nose_score < 7:
-        tips.append(("👃", "Нос — визуальная коррекция",
-                     "Объём на висках визуально уменьшает нос. "
-                     "Стрижка с более широкой верхней частью сужает восприятие носа. "
-                     "Лёгкий контуринг носа работает даже у мужчин."))
+    ("cheekbones_score",      "cheekbones",
+     "Метрика измеряет отношение ширины скул к ширине челюсти. Высокое значение означает "
+     "более выраженные скулы относительно линии челюсти. Это создаёт резкий контурный рельеф "
+     "— так называемые chiseled cheekbones, один из ключевых маркеров маскулинности.",
+     "Ширина скул / ширина челюсти",
+     "Выраженные скулы ассоциируются с высоким уровнем тестостерона и воспринимаются как "
+     "сигнал генетического качества. Этот рельеф формирует запоминающийся силуэт."),
 
-    # Причёска / трети
-    if m.facial_thirds_score < 7.5:
-        tips.append(("✂️", "Причёска и трети лица",
-                     "Трети лица корректируются причёской: высокий лоб — чёлка или зачёс вперёд; "
-                     "низкий лоб — зачёс назад, объём на макушке."))
-    else:
-        tips.append(("✂️", "Причёска — подчеркни сильные стороны",
-                     "Стрижка до ушей открывает скулы и подчёркивает челюсть. "
-                     "Андеркат или тейпер по бокам добавляет «структуру» лицу."))
+    ("eyes_score",            "eyes",
+     "Метрика оценивает размер глаз относительно ширины лица. "
+     "Оптимальный размер глаз обеспечивает баланс между выразительностью и пропорциональностью. "
+     "Отклонения в обе стороны влияют на восприятие взгляда.",
+     "Ширина глаза / ширина лица",
+     "Размер глаз — один из главных факторов выразительности взгляда. "
+     "Пропорциональные глаза создают гармоничный баланс и усиливают первое впечатление."),
 
-    # Кожа — всегда
-    tips.append(("🧴", "Уход за кожей — базовый стек",
-                 "SPF 30–50 каждый день (без исключений) — главный антивозрастной инструмент. "
-                 "Увлажняющий крем утром и вечером. "
-                 "Ретинол 0.025% на ночь раз в неделю — выравнивает текстуру и поры."))
+    ("eye_distance_score",    "eye_distance",
+     "Метрика измеряет расстояние между внутренними углами глаз относительно ширины лица. "
+     "Норма по Фаркасу — около 0.271. Слишком близкие или далёкие глаза нарушают гармонию "
+     "средней трети лица и влияют на восприятие взгляда.",
+     "Расстояние между внутренними углами глаз / ширина лица",
+     "Правильная постановка глаз создаёт ощущение баланса. "
+     "Широкая постановка воспринимается как открытость, узкая — снижает доминантность взгляда."),
 
-    # Сон / образ жизни
-    tips.append(("🌙", "Сон и образ жизни",
-                 "7–9 часов сна снижают отёчность и улучшают кожу. "
-                 "Вода 2.5–3 л/день убирает задержку жидкости в лице. "
-                 "Ограничь сахар и переработанные продукты — кожа реагирует в течение 2–3 дней."))
+    ("canthal_tilt_score",    "canthal_tilt",
+     "Кантальный тильт — угол наклона глазной щели. Положительный тильт (внешний угол выше "
+     "внутреннего) соответствует так называемому хищному взгляду (hunter eyes) и ассоциируется "
+     "с доминантностью и привлекательностью. Отрицательный тильт создаёт мягкий, более нейтральный взгляд.",
+     "Угол наклона глазной щели (hunter eyes)",
+     "Положительный кантальный тильт — один из наиболее заметных маркеров мужской привлекательности. "
+     "Он формирует хищный, уверенный взгляд, который воспринимается как доминантность."),
 
-    return tips
+    ("nose_score",            "nose",
+     "Метрика оценивает ширину носа относительно ширины лица. "
+     "Нос в пределах нормы гармонично вписывается в пропорции лица и не привлекает "
+     "лишнего внимания. Отклонения влияют на баланс центральной зоны лица.",
+     "Ширина носа / ширина лица",
+     "Пропорциональный нос удерживает баланс средней зоны. "
+     "Слишком широкий нос перетягивает взгляд; слишком узкий — нарушает пропорции."),
+
+    ("lips_score",            "lips",
+     "Метрика оценивает ширину рта относительно ширины лица. "
+     "Оптимальный рот обрамляет нижнюю треть лица и создаёт гармонию между носом и подбородком. "
+     "Норма Фаркаса — около 0.403.",
+     "Ширина рта / ширина лица",
+     "Пропорциональный рот завершает гармонию нижней трети и усиливает выразительность лица. "
+     "Этот параметр напрямую влияет на восприятие губ и привлекательность улыбки."),
+
+    ("nose_length_score",     "nose_length",
+     "Метрика измеряет длину носа (от переносицы до основания) относительно общей высоты лица. "
+     "Нос правильной длины поддерживает баланс трёх третей. Длинный нос визуально удлиняет "
+     "среднюю треть; короткий — делает лицо более плоским.",
+     "Длина носа / высота лица",
+     "Длина носа определяет визуальный вес средней трети лица. "
+     "Пропорциональный нос незаметен — внимание направляется на глаза и общий контур."),
+
+    ("chin_length_score",     "chin_length",
+     "Метрика оценивает высоту нижней части подбородка (от нижней губы до кончика подбородка) "
+     "относительно высоты лица. Выраженный подбородок придаёт лицу завершённость и "
+     "мужественность. Норма Фаркаса — около 0.283.",
+     "Высота подбородка / высота лица",
+     "Выраженный подбородок — маркер зрелости и мужественности. "
+     "Вместе с длиной нижней трети он формирует волевой, решительный образ."),
+
+    ("chin_contour_score",    "chin_contour",
+     "Метрика измеряет степень сужения подбородка: отношение ширины самой узкой части "
+     "подбородочной зоны к ширине челюсти. Высокое значение означает более прямой, "
+     "квадратный подбородок; низкое — выраженно сужающийся к точке подбородок.",
+     "Ширина сужения подбородка / ширина челюсти",
+     "Контур подбородка влияет на силуэт нижней трети. "
+     "Квадратный подбородок придаёт мужественность; заострённый — элегантность."),
+
+    ("nose_to_mouth_score",   "nose_to_mouth",
+     "Метрика оценивает соотношение ширины носа к ширине рта. "
+     "Это пропорция, которую Фаркас считает одним из ключевых показателей гармонии "
+     "центральной зоны лица. Значение около 0.583 создаёт визуально сбалансированную нижнюю треть.",
+     "Ширина носа / ширина рта",
+     "Баланс носа и рта определяет гармонию центральной оси лица. "
+     "Нарушение этой пропорции привлекает внимание к одному из элементов в ущерб другому."),
+
+    ("biocular_score",        "biocular",
+     "Биокулярная ширина — расстояние между внешними углами глаз относительно ширины лица. "
+     "Норма по Фаркасу — около 0.713. Этот параметр определяет визуальную ширину зоны глаз "
+     "и влияет на то, насколько открытым и выразительным воспринимается взгляд.",
+     "Расстояние между внешними углами глаз / ширина лица",
+     "Биокулярная ширина определяет «масштаб» глаз на лице. "
+     "Оптимальное значение обеспечивает выразительный взгляд без ощущения перегруженности."),
+
+    ("forehead_score",        "forehead",
+     "Метрика оценивает ширину лба (в области висков) относительно ширины скул. "
+     "Норма около 0.919 означает, что лоб чуть уже скул, что характерно для мужского "
+     "инвертированного треугольника — одного из самых привлекательных контуров лица.",
+     "Ширина лба / ширина скул",
+     "Широкий лоб создаёт доминантный, уверенный силуэт. "
+     "В сочетании с узкой челюстью он формирует V-образный мужской контур лица."),
+
+    ("lip_fullness_score",    "lip_fullness",
+     "Метрика оценивает объём губ: суммарная высота верхней и нижней губы относительно "
+     "ширины рта. Норма Фаркаса — около 0.347. Более высокое значение означает более "
+     "полные, объёмные губы, что воспринимается как признак молодости.",
+     "Высота губ / ширина рта",
+     "Полные губы — один из универсальных маркеров молодости и привлекательности. "
+     "Они усиливают выразительность нижней трети и придают лицу чувственность."),
+
+    ("lip_ratio_score",       "lip_ratio",
+     "Метрика оценивает пропорцию между верхней и нижней губой. "
+     "Норма Фаркаса — около 0.639, то есть нижняя губа немного полнее верхней. "
+     "Это соотношение создаёт ощущение природной гармонии без искусственности.",
+     "Высота верхней губы / высота нижней губы",
+     "Правильная пропорция губ создаёт естественный, привлекательный контур рта. "
+     "Нарушение баланса может визуально деформировать улыбку и выражение лица."),
+
+    ("jaw_to_mouth_score",    "jaw_to_mouth",
+     "Метрика измеряет соотношение ширины челюсти к ширине рта. "
+     "Норма около 1.810 означает, что челюсть примерно в 1.8 раза шире рта. "
+     "Это определяет, насколько чётко рот вписывается в контур нижней трети.",
+     "Ширина челюсти / ширина рта",
+     "Широкая челюсть создаёт мужественный, структурный вид. "
+     "Правильное соотношение с шириной рта обеспечивает баланс нижней трети и чёткость контура."),
+
+    ("eye_shape_score",       "eye_shape",
+     "Метрика оценивает форму глаза: отношение высоты к ширине. "
+     "Норма по Фаркасу — около 0.285. Более высокое значение означает миндалевидные глаза, "
+     "более низкое — горизонтально вытянутые, часто ассоциирующиеся с хищным взглядом.",
+     "Высота глаза / ширина глаза",
+     "Форма глаза определяет характер взгляда: миндалевидные глаза воспринимаются как "
+     "выразительные; вытянутые горизонтально — как хищные и доминантные."),
+
+    ("brow_height_score",     "brow_height",
+     "Метрика оценивает расстояние между бровью и верхним веком относительно высоты лица. "
+     "Норма около 0.063 означает оптимальный зазор, при котором брови выглядят "
+     "естественно и гармонично дополняют зону глаз.",
+     "Расстояние бровь–глаз / высота лица",
+     "Правильная высота бровей обрамляет глаза и акцентирует взгляд. "
+     "Слишком высокие брови придают удивлённый вид; слишком низкие — хмурый."),
+]
+
+METRIC_ORDER_FULL = [
+    ("symmetry_score",         "Симметрия лица",           1),
+    ("face_proportions_score", "Пропорции лица",           2),
+    ("vertical_balance_score", "Вертикальный баланс",      3),
+    ("cheekbones_score",       "Баланс скул и челюсти",    4),
+    ("eyes_score",             "Размер глаз",              5),
+    ("eye_distance_score",     "Расстояние между глазами", 6),
+    ("canthal_tilt_score",     "Наклон глаз",              7),
+    ("nose_score",             "Ширина носа",              8),
+    ("lips_score",             "Ширина рта",               9),
+    ("nose_length_score",      "Длина носа",               10),
+    ("chin_length_score",      "Длина подбородка",         11),
+    ("chin_contour_score",     "Контур подбородка",        12),
+    ("nose_to_mouth_score",    "Нос к ширине рта",         13),
+    ("biocular_score",         "Биокулярная ширина",       14),
+    ("forehead_score",         "Ширина лба",               15),
+    ("lip_fullness_score",     "Полнота губ",              16),
+    ("lip_ratio_score",        "Пропорции губ",            17),
+    ("jaw_to_mouth_score",     "Челюсть к ширине рта",     18),
+    ("eye_shape_score",        "Форма глаз",               19),
+    ("brow_height_score",      "Высота бровей",            20),
+]
+
+BRIEF_GRID = [
+    ("symmetry_score",        "Симметрия"),
+    ("vertical_balance_score","Вертикальный баланс"),
+    ("cheekbones_score",      "Скулы / челюсть"),
+    ("eyes_score",            "Размер глаз"),
+    ("canthal_tilt_score",    "Наклон глаз"),
+    ("nose_score",            "Ширина носа"),
+    ("lip_fullness_score",    "Полнота губ"),
+    ("chin_contour_score",    "Контур челюсти"),
+    ("brow_height_score",     "Высота бровей"),
+]
+
+# Советы по слабым метрикам
+METRIC_ADVICE = {
+    "symmetry_score":
+        "Жуй равномерно с обеих сторон. Сон на спине помогает сохранять симметрию. "
+        "Проверь прикус у ортодонта — это главная причина лицевой асимметрии. "
+        "Избегай постоянного упора щекой в руку.",
+    "face_proportions_score":
+        "Причёска корректирует форму: высокий объём на макушке визуально удлиняет лицо, "
+        "объём по бокам — расширяет. Подбери фасон под желаемые пропорции.",
+    "vertical_balance_score":
+        "Коррекция трёх третей — задача стилиста. Чёлка балансирует верхнюю треть. "
+        "Борода удлиняет или укорачивает нижнюю треть. Работа с мьюингом со временем меняет структуру.",
+    "cheekbones_score":
+        "Снизь % жира в теле ниже 14% — скулы проявятся. Мьюинг стимулирует рост скул. "
+        "Стрижки с выбритыми висками подчёркивают скуловой контур. Жвачка Falim ежедневно.",
+    "eyes_score":
+        "Убери отёки под глазами: ледяной компресс или нефритовый роллер утром. "
+        "Ограничь соль и алкоголь. Сон 8 часов. Ретинол 0.025% снижает пигментацию вокруг глаз.",
+    "eye_distance_score":
+        "Близкая постановка глаз корректируется причёской с объёмом по бокам и применением "
+        "светлых акцентов на внешних уголках. Далёкая — тёмные акценты на внутренних углах.",
+    "canthal_tilt_score":
+        "Убери отёки нижнего века (сон, вода, меньше соли). Мьюинг поднимает середину лица. "
+        "Ледяной роллер по утрам по направлению от носа к вискам.",
+    "nose_score":
+        "Объём на висках визуально уменьшает нос. Стрижка с широкой верхней частью сужает "
+        "восприятие носа. Умеренный контуринг носа работает даже у мужчин.",
+    "lips_score":
+        "Гидратация делает губы визуально более полными. Скраб для губ раз в неделю. "
+        "Увлажняющий бальзам ежедневно. Яркий контур рта подчёркивает правильные пропорции.",
+    "nose_length_score":
+        "Длинный нос корректируется акцентом на лбу (причёска с объёмом вверх). "
+        "Короткий нос — акцент на нижней трети (борода, визуальный вес внизу).",
+    "chin_length_score":
+        "Борода на подбородке (goatee) визуально удлиняет нижнюю треть. "
+        "Мьюинг и правильное положение языка со временем выдвигают подбородок вперёд.",
+    "chin_contour_score":
+        "Снизь % жира — чёткость подбородочного контура улучшится. Мьюинг помогает. "
+        "Стрижка с чёткими краями акцентирует контур.",
+    "nose_to_mouth_score":
+        "Баланс носа и рта — задача стилиста. Визуально можно скорректировать "
+        "контуром губ (подчеркнуть или смягчить) и работой с объёмом причёски.",
+    "biocular_score":
+        "Биокулярная ширина — костная характеристика. Визуально корректируется "
+        "причёской с объёмом у висков и бровями правильной формы.",
+    "forehead_score":
+        "Широкий лоб балансируется объёмом по бокам и чёлкой. "
+        "Узкий лоб — акцент на объёме у висков и широкой верхней части причёски.",
+    "lip_fullness_score":
+        "Гидратация делает губы полнее. Бальзам + лёгкое растирание кубиком льда. "
+        "Нежный скраб раз в неделю. Правильный цвет одежды выделяет зону рта.",
+    "lip_ratio_score":
+        "Пропорции губ — одна из наименее поддающихся коррекции метрик. "
+        "Увлажняй губы ежедневно. При желании — контурирование помадой корректирует визуальный баланс.",
+    "jaw_to_mouth_score":
+        "Широкий рот визуально сужается тёмными оттенками в уголках. "
+        "Узкий рот — светлые центральные акценты. Чёткость челюсти улучшается снижением % жира.",
+    "eye_shape_score":
+        "Форма глаза — костная характеристика. Горизонтально вытянутые глаза "
+        "воспринимаются как более хищные. Убери отёчность верхнего века для более чёткого разреза.",
+    "brow_height_score":
+        "Правильная форма и высота бровей — один из самых доступных инструментов. "
+        "Брови должны начинаться над внутренним углом глаза и заканчиваться у внешнего. "
+        "Правильная дуга поднимает взгляд визуально.",
+}
 
 
-def _top_metrics(m: FaceMetrics):
-    """Возвращает топ-3 сильных и топ-3 слабых метрик."""
-    all_metrics = [
-        ("Симметрия лица",          m.symmetry_score),
-        ("Пропорции лица",          m.face_proportions_score),
-        ("Вертикальный баланс",     m.vertical_balance_score),
-        ("Баланс скул и челюсти",   m.cheekbones_score),
-        ("Размер глаз",             m.eyes_score),
-        ("Расст. между глазами",    m.eye_distance_score),
-        ("Наклон глаз",             m.canthal_tilt_score),
-        ("Ширина носа",             m.nose_score),
-        ("Ширина рта",              m.lips_score),
-        ("Длина носа",              m.nose_length_score),
-        ("Длина подбородка",        m.chin_length_score),
-        ("Контур подбородка",       m.chin_contour_score),
-        ("Нос к ширине рта",        m.nose_to_mouth_score),
-        ("Биокулярная ширина",      m.biocular_score),
-        ("Ширина лба",              m.forehead_score),
-        ("Полнота губ",             m.lip_fullness_score),
-        ("Пропорции губ",           m.lip_ratio_score),
-        ("Челюсть к ширине рта",    m.jaw_to_mouth_score),
-        ("Форма глаз",              m.eye_shape_score),
-        ("Высота бровей",           m.brow_height_score),
-    ]
-    srt = sorted(all_metrics, key=lambda x: x[1], reverse=True)
-    return srt[:3], srt[-3:]
+# ╔══════════════════════════════════════════════════════════════════════════════╗
+# ║  КРАТКИЙ РАЗБОР  (2 страницы)                                               ║
+# ╚══════════════════════════════════════════════════════════════════════════════╝
 
-
-# ════════════════════════════════════════════════════════════════════════════
-#  КРАТКИЙ РАЗБОР
-# ════════════════════════════════════════════════════════════════════════════
-
-def generate_brief_pdf(metrics: FaceMetrics, username: str = "user") -> bytes:
+def generate_brief_pdf(metrics: FaceMetrics, name: str = "") -> bytes:
     buf = io.BytesIO()
-    doc = _make_doc(buf)
-    st  = []
+    c = pdfgen_canvas.Canvas(buf, pagesize=A4)
 
-    # Шапка
-    st.append(Paragraph("FACEDEX",
-                         _s("t", fontName=BOLD, fontSize=30, textColor=GOLD,
-                            alignment=TA_CENTER, spaceAfter=0)))
-    st.append(Paragraph("Краткий математический разбор геометрии твоего лица.",
-                         _s("su", fontSize=10, textColor=DIM, alignment=TA_CENTER, spaceAfter=2*mm)))
-    st.append(HRFlowable(width="100%", thickness=1.5, color=GOLD, spaceAfter=5*mm))
+    # ── Страница 1 ────────────────────────────────────────────────────────────
+    _rect(c, 0, 0, W, H, fill=WHITE)
+    _header(c)
 
-    # Фото (аннотированное)
-    if metrics.landmark_image:
-        ph = _photo(metrics.landmark_image, max_w=72*mm, max_h=84*mm)
-        if ph:
-            st.append(ph)
-            st.append(Spacer(1, 4*mm))
+    y = MT + 16*mm
+    _para(c,
+          "Краткий математический разбор геометрии твоего лица.",
+          ML, y, BW, 14, font=R, size=11, color=GRAY, align=TA_CENTER)
 
-    # Бейдж
-    st.append(_score_badge(metrics.overall_score, metrics.grade, metrics.tier))
-    st.append(Spacer(1, 6*mm))
+    # Большой балл
+    y += 14
+    score_col = _sc(metrics.overall_score)
+    _txt(c, f"{metrics.overall_score:.2f}", W / 2 - 14*mm, y + 28*mm,
+         font=B, size=38, color=score_col, align="right")
+    _txt(c, "из 10", W / 2 - 11*mm, y + 28*mm, font=R, size=13, color=DIM, align="left")
 
-    # Топ сильных и слабых
-    strong, weak = _top_metrics(metrics)
-    st += _section("ПРОФИЛЬ МЕТРИК")
-    top_row = [[
-        Paragraph("Топ-3 сильных метрики", _s("th", fontName=BOLD, fontSize=9, textColor=GOLDB)),
-        Paragraph("Топ-3 зоны потенциала", _s("tw", fontName=BOLD, fontSize=9, textColor=DIM)),
-    ]]
-    for i in range(3):
-        sn, ss = strong[i]
-        wn, ws = weak[i]
-        top_row.append([
-            Paragraph(f'● {sn} — <font color="{_sh(ss)}">{ss:.2f}</font>',
-                      _s("ts", fontSize=9, textColor=TEXT, leading=14)),
-            Paragraph(f'● {wn} — <font color="{_sh(ws)}">{ws:.2f}</font>',
-                      _s("tw2", fontSize=9, textColor=TEXT, leading=14)),
-        ])
-    top_tbl = Table(top_row, colWidths=[BODY / 2 - 3*mm, BODY / 2 - 3*mm])
-    top_tbl.setStyle(TableStyle([
-        ("BACKGROUND",    (0, 0), (-1, 0), HEADER),
-        ("BACKGROUND",    (0, 1), (-1, -1), PANEL),
-        ("BOX",           (0, 0), (-1, -1), 0.6, GOLD),
-        ("INNERGRID",     (0, 0), (-1, -1), 0.3, BORDER),
-        ("LINEAFTER",     (0, 0), (0, -1), 0.5, BORDER),
-        ("TOPPADDING",    (0, 0), (-1, -1), 6),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
-        ("LEFTPADDING",   (0, 0), (-1, -1), 10),
-        ("RIGHTPADDING",  (0, 0), (-1, -1), 10),
-    ]))
-    st.append(top_tbl)
-    st.append(Spacer(1, 6*mm))
+    # Тир
+    tier_str = f"{metrics.tier}  ·  {_tier_label(metrics.tier)}"
+    y += 36*mm
+    _txt(c, tier_str, W / 2, y, font=B, size=11, color=BLACK, align="center")
+    y += 5*mm
+    top = _top_pct(metrics.overall_score)
+    _txt(c, f"Ты в топ {top} по геометрии лица!", W / 2, y, font=R, size=10, color=GRAY, align="center")
+    y += 5*mm
+    _hline(c, ML, y, BW)
 
-    # Сетка 3×3 с 9 метриками
-    st += _section("ОЦЕНКА ПО КЛЮЧЕВЫМ ПАРАМЕТРАМ")
-    cards = [
-        ("Симметрия",     metrics.symmetry_score),
-        ("Верт. баланс",  metrics.vertical_balance_score),
-        ("Скулы / чел.",  metrics.cheekbones_score),
-        ("Размер глаз",   metrics.eyes_score),
-        ("Наклон глаз",   metrics.canthal_tilt_score),
-        ("Ширина носа",   metrics.nose_score),
-        ("Полнота губ",   metrics.lip_fullness_score),
-        ("Контур чел.",   metrics.chin_contour_score),
-        ("Высота бровей", metrics.brow_height_score),
+    # 3×3 сетка
+    y += 5*mm
+    card_w = (BW - 2 * 4*mm) / 3
+    card_h = 42*mm
+    row_gap = 4*mm
+
+    for row in range(3):
+        for col in range(3):
+            idx = row * 3 + col
+            field, label = BRIEF_GRID[idx]
+            score = getattr(metrics, field, 5.0)
+            sc_col = _sc(score)
+            lv = _lv(score)
+
+            cx = ML + col * (card_w + 4*mm)
+            cy = y + row * (card_h + row_gap)
+
+            # Карточка фон
+            _rect(c, cx, cy, card_w, card_h, fill=LGRAY, stroke=LINE, lw=0.5)
+
+            # Заголовок карточки
+            _para(c, label, cx + 3, cy + 5, card_w - 6, 11,
+                  font=R, size=9, color=GRAY, align=TA_CENTER)
+
+            # Визуальный бар (тонкая полоска под заголовком)
+            bar_w = (card_w - 10) * score / 10
+            _rect(c, cx + 5, cy + 17, card_w - 10, 3, fill=LINE)
+            _rect(c, cx + 5, cy + 17, bar_w, 3, fill=sc_col)
+
+            # Большой балл
+            _txt(c, f"{score:.2f}", cx + card_w / 2, cy + 25*mm,
+                 font=B, size=22, color=sc_col, align="center")
+
+            # Уровень
+            _txt(c, lv, cx + card_w / 2, cy + 30*mm,
+                 font=R, size=8, color=sc_col, align="center")
+
+    _footer(c, 1, 2)
+    c.showPage()
+
+    # ── Страница 2 ────────────────────────────────────────────────────────────
+    _rect(c, 0, 0, W, H, fill=WHITE)
+    _header(c)
+
+    y = MT + 16*mm
+    _txt(c, "Краткий разбор — только верхушка.", ML, y, font=B, size=14, color=BLACK)
+    y += 7*mm
+    _para(c,
+          "Этот краткий разбор — лишь небольшая часть полноценного анализа лица.",
+          ML, y, BW, 12, font=R, size=11, color=GRAY)
+    y += 12*mm
+    _para(c,
+          "Здесь ты видишь только базовые оценки основных параметров. В полном разборе ты получишь "
+          "уже полноценный файл на 25 страниц:",
+          ML, y, BW, 22, font=R, size=10, color=BLACK)
+    y += 24*mm
+
+    bullets = [
+        ("Раскрытие всех оценок: чего не хватает и что нужно улучшать. "
+         "Ты сможешь понять, какие особенности делают твоё лицо более гармоничным, "
+         "а какие визуально снижают привлекательность и могут мешать восприниматься "
+         "более уверенно, статусно и эстетично."),
+        ("Подробная оценка общей гармоничности и твоей объективной привлекательности "
+         "с подробным описанием."),
+        ("Общая статистика из 20 зон лица, по которой ты поймёшь свои сильные и слабые стороны."),
+        ("3 страницы конкретных рекомендаций, которые помогут тебе полностью раскрыть свой "
+         "потенциал и достичь максимальной красоты."),
     ]
-    rows_3 = [cards[i:i+3] for i in range(0, 9, 3)]
-    grid_data = []
-    for row in rows_3:
-        grid_data.append([_mini_score_card(lbl, sc) for lbl, sc in row])
-    cell_w = BODY / 3 - 2*mm
-    grid = Table(grid_data, colWidths=[cell_w, cell_w, cell_w])
-    grid.setStyle(TableStyle([
-        ("VALIGN",        (0, 0), (-1, -1), "TOP"),
-        ("TOPPADDING",    (0, 0), (-1, -1), 3),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
-        ("LEFTPADDING",   (0, 0), (-1, -1), 3),
-        ("RIGHTPADDING",  (0, 0), (-1, -1), 3),
-    ]))
-    st.append(grid)
-    st.append(Spacer(1, 6*mm))
+    for bullet in bullets:
+        _para(c, f"   •   {bullet}", ML, y, BW, 28, font=R, size=10, color=BLACK, align=TA_JUSTIFY)
+        y += 30*mm
 
-    # Подсказка — апсейл к полному
-    hint = Table([[Paragraph(
-        "📊  Краткий разбор — лишь верхушка.\n"
-        "Получи <b>Полный разбор на 25 страниц</b>: 20 метрик по нормам Лесли Фаркаса, "
-        "детальное объяснение каждой метрики и конкретные шаги по улучшению внешности.",
-        _s("hint", fontSize=9, textColor=DIM, leading=14)
-    )]], colWidths=[BODY])
-    hint.setStyle(TableStyle([
-        ("BACKGROUND",   (0, 0), (-1, -1), PANEL),
-        ("BOX",          (0, 0), (-1, -1), 0.5, BORDER),
-        ("LEFTPADDING",  (0, 0), (-1, -1), 12),
-        ("RIGHTPADDING", (0, 0), (-1, -1), 12),
-        ("TOPPADDING",   (0, 0), (-1, -1), 10),
-        ("BOTTOMPADDING",(0, 0), (-1, -1), 10),
-    ]))
-    st.append(KeepTogether(hint))
-    st.append(Spacer(1, 5*mm))
-    st.append(HRFlowable(width="100%", thickness=1.5, color=GOLD, spaceAfter=2*mm))
-    st.append(Paragraph(
-        "Facedex  •  Математический анализ гармонии лица  •  Только для развлечения",
-        _s("ft", fontSize=8, textColor=DIM, alignment=TA_CENTER)))
+    y += 5*mm
+    _hline(c, ML, y, BW)
+    y += 7*mm
 
-    doc.build(st, onFirstPage=_dark_bg, onLaterPages=_dark_bg)
+    _para(c,
+          "Ты видишь своё лицо каждый день, и твой глаз уже давно замылился.",
+          ML, y, BW, 12, font=B, size=11, color=BLACK)
+    y += 13*mm
+    _para(c,
+          "Именно поэтому многие люди годами не понимают, что конкретно портит их внешность и "
+          "почему они воспринимаются слабее, менее привлекательно или менее статусно, чем могли бы.\n\n"
+          "Полный разбор позволяет посмотреть на своё лицо со стороны — через объективную геометрию, "
+          "пропорции и реальные параметры, а далее — приступить к улучшению.",
+          ML, y, BW, 50, font=R, size=10, color=BLACK, align=TA_JUSTIFY)
+    y += 55*mm
+
+    # Кнопка-блок
+    btn_h = 12*mm
+    _rect(c, ML, y, BW, btn_h, fill=BLACK)
+    _txt(c, "Получить полный разбор  →",
+         W / 2, y + btn_h / 2 + 1.5*mm, font=B, size=12, color=WHITE, align="center")
+
+    _footer(c, 2, 2)
+    c.showPage()
+    c.save()
     return buf.getvalue()
 
 
-# ════════════════════════════════════════════════════════════════════════════
-#  ПОЛНЫЙ РАЗБОР
-# ════════════════════════════════════════════════════════════════════════════
+# ╔══════════════════════════════════════════════════════════════════════════════╗
+# ║  ПОЛНЫЙ РАЗБОР  (25 страниц)                                                ║
+# ╚══════════════════════════════════════════════════════════════════════════════╝
 
-def generate_full_pdf(metrics: FaceMetrics, username: str = "user") -> bytes:
-    d   = metrics.details or {}
-    fw  = metrics.face_width or 1
-    fh  = metrics.face_height or 1
-    buf = io.BytesIO()
-    doc = _make_doc(buf)
-    st  = []
+def _get_score(metrics, field):
+    return getattr(metrics, field, 5.0)
 
-    # ── Обложка ──────────────────────────────────────────────────────────────
-    st.append(Paragraph("FACEDEX",
-                         _s("t", fontName=BOLD, fontSize=30, textColor=GOLD,
-                            alignment=TA_CENTER, spaceAfter=0)))
-    st.append(Paragraph("Полный математический разбор геометрии твоего лица.",
-                         _s("su", fontSize=10, textColor=DIM, alignment=TA_CENTER, spaceAfter=2*mm)))
-    st.append(HRFlowable(width="100%", thickness=1.5, color=GOLD, spaceAfter=5*mm))
+
+def _get_raw(metrics, detail_key):
+    """Получить сырое значение из details по ключу."""
+    if detail_key is None:
+        return None
+    return metrics.details.get(detail_key)
+
+
+def _draw_score_bar(c, x, y_top, w, h, score):
+    """Горизонтальный бар оценки с отметкой нормы (5.0)."""
+    bar_h = 6
+    bar_y = y_top + h / 2 - bar_h / 2
+    _rect(c, x, bar_y, w, bar_h, fill=LINE)
+    fill_w = w * score / 10
+    _rect(c, x, bar_y, fill_w, bar_h, fill=_sc(score))
+    # Отметка нормы (5.0)
+    norm_x = x + w * 0.5
+    c.saveState()
+    c.setStrokeColor(DIM)
+    c.setLineWidth(1)
+    c.line(norm_x, _c(bar_y - 2), norm_x, _c(bar_y + bar_h + 2))
+    c.restoreState()
+    _txt(c, f"{score:.2f}/10", x + w / 2, bar_y - 6, font=B, size=11,
+         color=_sc(score), align="center")
+
+
+def _full_cover(c, metrics):
+    """Страница 1 — обложка с фото."""
+    _rect(c, 0, 0, W, H, fill=WHITE)
+    _header(c)
+
+    y = MT + 16*mm
+    _para(c,
+          "Полный математический разбор геометрии твоего лица.",
+          ML, y, BW, 14, font=R, size=11, color=GRAY, align=TA_CENTER)
+    y += 13
+    _txt(c, "Открыть бота  →", W / 2, y + 8*mm, font=R, size=9, color=INFL_BD, align="center")
+    y += 14*mm
 
     # Фото
+    photo_h = 90*mm
     if metrics.landmark_image:
-        ph = _photo(metrics.landmark_image, max_w=80*mm, max_h=92*mm)
-        if ph:
-            st.append(ph)
-            st.append(Spacer(1, 4*mm))
+        try:
+            pil = PILImage.open(io.BytesIO(metrics.landmark_image))
+            iw, ih = pil.size
+            scale = min(BW / iw, photo_h / ih)
+            pw, ph = iw * scale, ih * scale
+            px = ML + (BW - pw) / 2
+            from reportlab.platypus import Image as RLImage
+            img = RLImage(io.BytesIO(metrics.landmark_image), width=pw, height=ph)
+            img.drawOn(c, px, _c(y + ph))
+        except Exception:
+            pass
 
-    # Бейдж
-    st.append(_score_badge(metrics.overall_score, metrics.grade, metrics.tier))
-    st.append(Spacer(1, 4*mm))
+    y += photo_h + 5*mm
 
-    # Общее впечатление
-    strong, weak = _top_metrics(metrics)
-    strong_str = ", ".join(n for n, _ in strong)
-    weak_str   = ", ".join(n for n, _ in weak)
+    # Балл
+    score_col = _sc(metrics.overall_score)
+    _txt(c, f"{metrics.overall_score:.2f}", W / 2 - 14*mm, y + 14*mm,
+         font=B, size=36, color=score_col, align="right")
+    _txt(c, "из 10", W / 2 - 11*mm, y + 14*mm, font=R, size=13, color=DIM, align="left")
+    y += 20*mm
 
-    intro_tbl = Table([[Paragraph(
-        "<b>ОБЩЕЕ ВПЕЧАТЛЕНИЕ</b>",
-        _s("ith", fontName=BOLD, fontSize=10, textColor=GOLDB, leading=14)),
-    ], [Paragraph(
-        f"Сильные стороны: {strong_str}. "
-        f"Зоны потенциала: {weak_str}.",
-        _s("itb", fontSize=9, textColor=TEXT, leading=14)),
-    ]], colWidths=[BODY])
-    intro_tbl.setStyle(TableStyle([
-        ("BACKGROUND",   (0, 0), (-1, -1), ACCENT),
-        ("BOX",          (0, 0), (-1, -1), 0.6, GOLD),
-        ("LEFTPADDING",  (0, 0), (-1, -1), 12),
-        ("RIGHTPADDING", (0, 0), (-1, -1), 12),
-        ("TOPPADDING",   (0, 0), (-1, -1), 8),
-        ("BOTTOMPADDING",(0, 0), (-1, -1), 8),
-    ]))
-    st.append(intro_tbl)
-    st.append(Spacer(1, 4*mm))
+    top = _top_pct(metrics.overall_score)
+    _para(c, f"Ты входишь в топ {top} людей по геометрии лица!",
+          ML, y, BW, 14, font=B, size=13, color=BLACK, align=TA_CENTER)
+    y += 15*mm
 
-    # ── Профиль метрик (топ/слабые) ──────────────────────────────────────────
-    st += _section("ПРОФИЛЬ МЕТРИК")
-    top_row = [[
-        Paragraph("Топ-3 сильных метрики", _s("th", fontName=BOLD, fontSize=9, textColor=GOLDB)),
-        Paragraph("Топ-3 зоны потенциала", _s("tw", fontName=BOLD, fontSize=9, textColor=DIM)),
-    ]]
+    _txt(c, f"Уровень: {_level_str(metrics.overall_score)}", W / 2, y,
+         font=R, size=10, color=GRAY, align="center")
+    y += 6*mm
+
+    # Топ-3 сильных
+    all_scores = [(f, getattr(metrics, f, 5.0)) for f, _, __ in METRIC_ORDER_FULL]
+    sorted_asc = sorted(all_scores, key=lambda x: x[1])
+    weak_3 = sorted_asc[:3]
+    strong_3 = sorted_asc[-3:][::-1]
+
+    name_map = {f: n for f, n, _ in METRIC_ORDER_FULL}
+    strong_str = ", ".join(name_map[f].lower() for f, _ in strong_3)
+    _txt(c, f"Сильные стороны: {strong_str}", W / 2, y,
+         font=R, size=9, color=GRAY, align="center")
+
+    _footer(c, 1, 25)
+
+
+def _full_overview(c, metrics):
+    """Страница 2 — сводный обзор."""
+    _rect(c, 0, 0, W, H, fill=WHITE)
+    _header(c)
+
+    y = MT + 14*mm
+
+    # Балл
+    score_col = _sc(metrics.overall_score)
+    _txt(c, f"{metrics.overall_score:.2f}", W / 2 - 14*mm, y + 12*mm,
+         font=B, size=34, color=score_col, align="right")
+    _txt(c, "из 10", W / 2 - 11*mm, y + 12*mm, font=R, size=12, color=DIM, align="left")
+    y += 18*mm
+
+    top = _top_pct(metrics.overall_score)
+    _para(c, f"Ты входишь в топ {top} людей по геометрии лица!",
+          ML, y, BW, 12, font=B, size=11, color=BLACK, align=TA_CENTER)
+    y += 13*mm
+
+    _txt(c, f"Уровень: {_level_str(metrics.overall_score)}", W / 2, y,
+         font=R, size=10, color=GRAY, align="center")
+    y += 6*mm
+
+    all_scores = [(f, getattr(metrics, f, 5.0)) for f, _, __ in METRIC_ORDER_FULL]
+    sorted_asc = sorted(all_scores, key=lambda x: x[1])
+    weak_3 = sorted_asc[:3]
+    strong_3 = sorted_asc[-3:][::-1]
+    name_map = {f: n for f, n, _ in METRIC_ORDER_FULL}
+    strong_str = ", ".join(name_map[f].lower() for f, _ in strong_3)
+    _txt(c, f"Сильные стороны: {strong_str}", W / 2, y, font=R, size=9, color=GRAY, align="center")
+    y += 7*mm
+    _hline(c, ML, y, BW)
+    y += 5*mm
+
+    # ОБЩЕЕ ВПЕЧАТЛЕНИЕ
+    _txt(c, "ОБЩЕЕ ВПЕЧАТЛЕНИЕ", ML, y, font=B, size=10, color=BLACK)
+    y += 6*mm
+
+    # Генерируем текст впечатления
+    strong_names = [name_map[f].lower() for f, _ in strong_3]
+    weak_names = [name_map[f].lower() for f, _ in weak_3]
+    impression = (
+        f"Лицо с {_level_str(metrics.overall_score).lower()} геометрией. "
+        f"Ключевые сильные стороны — {', '.join(strong_names)} — "
+        f"формируют выразительный, запоминающийся образ. "
+        f"Зоны потенциала — {', '.join(weak_names)} — при грамотной работе могут "
+        f"существенно усилить общее впечатление."
+    )
+    _para(c, impression, ML, y, BW, 28, font=R, size=9.5, color=BLACK, align=TA_JUSTIFY)
+    y += 30*mm
+
+    # Профиль метрик (мини-бары)
+    _txt(c, "Профиль метрик", ML, y, font=B, size=10, color=BLACK)
+    y += 7*mm
+
+    bar_row_h = 6*mm
+    bar_bar_w = 80*mm
+    bar_lbl_w = 65*mm
+    bar_score_w = 15*mm
+
+    for field, name, num in METRIC_ORDER_FULL:
+        score = _get_score(metrics, field)
+        sc = _sc(score)
+        # label
+        _txt(c, name, ML, y + 3.5, font=R, size=7.5, color=BLACK)
+        # bar background
+        bx = ML + bar_lbl_w
+        _rect(c, bx, y + 1, bar_bar_w, 3.5, fill=LINE)
+        _rect(c, bx, y + 1, bar_bar_w * score / 10, 3.5, fill=sc)
+        # score
+        _txt(c, f"{score:.2f}", bx + bar_bar_w + 3, y + 3.5, font=B, size=7.5, color=sc)
+        y += bar_row_h
+        if y > H - 60*mm:
+            break  # safety
+
+    y += 5*mm
+    _hline(c, ML, y, BW)
+    y += 5*mm
+
+    # Топ-3 сильных / зоны потенциала
+    half = BW / 2 - 3*mm
+    _txt(c, "Топ-3 сильных метрики", ML, y, font=B, size=9, color=BLACK)
+    _txt(c, "Топ-3 зоны потенциала", ML + half + 6*mm, y, font=B, size=9, color=BLACK)
+    y += 6*mm
+
     for i in range(3):
-        sn, ss = strong[i]
-        wn, ws = weak[i]
-        top_row.append([
-            Paragraph(f'● {sn} — <font color="{_sh(ss)}">{ss:.2f}</font>',
-                      _s("ts", fontSize=9, textColor=TEXT, leading=14)),
-            Paragraph(f'● {wn} — <font color="{_sh(ws)}">{ws:.2f}</font>',
-                      _s("tw2", fontSize=9, textColor=TEXT, leading=14)),
-        ])
-    top_tbl = Table(top_row, colWidths=[BODY / 2 - 3*mm, BODY / 2 - 3*mm])
-    top_tbl.setStyle(TableStyle([
-        ("BACKGROUND",    (0, 0), (-1, 0), HEADER),
-        ("BACKGROUND",    (0, 1), (-1, -1), PANEL),
-        ("BOX",           (0, 0), (-1, -1), 0.6, GOLD),
-        ("INNERGRID",     (0, 0), (-1, -1), 0.3, BORDER),
-        ("LINEAFTER",     (0, 0), (0, -1), 0.5, BORDER),
-        ("TOPPADDING",    (0, 0), (-1, -1), 6),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
-        ("LEFTPADDING",   (0, 0), (-1, -1), 10),
-        ("RIGHTPADDING",  (0, 0), (-1, -1), 10),
-    ]))
-    st.append(top_tbl)
+        sf, ss = strong_3[i]
+        wf, ws = weak_3[i]
+        _txt(c, f"●  {name_map[sf]}  —  {ss:.2f}", ML + 4, y, font=R, size=8.5, color=C_HIGH)
+        _txt(c, f"●  {name_map[wf]}  —  {ws:.2f}", ML + half + 6*mm + 4, y,
+             font=R, size=8.5, color=C_LOW)
+        y += 5.5*mm
 
-    # Вклад каждой метрики — маленькая сетка
-    st.append(Spacer(1, 4*mm))
-    st.append(Paragraph("Вклад каждой метрики",
-                         _s("mth", fontName=BOLD, fontSize=10, textColor=GOLDB, spaceAfter=2*mm)))
-    all_20 = [
-        ("Симметрия лица",       metrics.symmetry_score),
-        ("Длина подбородка",     metrics.chin_length_score),
-        ("Пропорции лица",       metrics.face_proportions_score),
-        ("Контур подбородка",    metrics.chin_contour_score),
-        ("Вертикальный баланс",  metrics.vertical_balance_score),
-        ("Нос к ширине рта",     metrics.nose_to_mouth_score),
-        ("Баланс скул и чел.",   metrics.cheekbones_score),
-        ("Биокулярная ширина",   metrics.biocular_score),
-        ("Размер глаз",          metrics.eyes_score),
-        ("Ширина лба",           metrics.forehead_score),
-        ("Расст. между глазами", metrics.eye_distance_score),
-        ("Полнота губ",          metrics.lip_fullness_score),
-        ("Наклон глаз",          metrics.canthal_tilt_score),
-        ("Пропорции губ",        metrics.lip_ratio_score),
-        ("Ширина носа",          metrics.nose_score),
-        ("Чел. к ширине рта",    metrics.jaw_to_mouth_score),
-        ("Ширина рта",           metrics.lips_score),
-        ("Форма глаз",           metrics.eye_shape_score),
-        ("Длина носа",           metrics.nose_length_score),
-        ("Высота бровей",        metrics.brow_height_score),
-    ]
-    contrib_rows = []
+    y += 3*mm
+    _hline(c, ML, y, BW)
+    y += 5*mm
+
+    # Вклад каждой метрики (2-колоночная таблица)
+    _txt(c, "Вклад каждой метрики", ML, y, font=B, size=10, color=BLACK)
+    y += 7*mm
+
+    col_w = BW / 2 - 3*mm
     for i in range(0, 20, 2):
-        n1, s1 = all_20[i]
-        n2, s2 = all_20[i + 1]
-        contrib_rows.append([
-            Paragraph(n1, _s("cn", fontSize=8.5, textColor=TEXT, leading=12)),
-            Paragraph(f'<font color="{_sh(s1)}">{s1:.2f}</font>',
-                      _s("cv", fontName=BOLD, fontSize=8.5, leading=12, alignment=TA_CENTER)),
-            Paragraph(n2, _s("cn2", fontSize=8.5, textColor=TEXT, leading=12)),
-            Paragraph(f'<font color="{_sh(s2)}">{s2:.2f}</font>',
-                      _s("cv2", fontName=BOLD, fontSize=8.5, leading=12, alignment=TA_CENTER)),
-        ])
-    cont_tbl = Table(contrib_rows, colWidths=[62*mm, 18*mm, 62*mm, 18*mm])
-    cont_tbl.setStyle(TableStyle([
-        ("ROWBACKGROUNDS", (0, 0), (-1, -1), [PANEL, PANEL2]),
-        ("BOX",           (0, 0), (-1, -1), 0.6, GOLD),
-        ("INNERGRID",     (0, 0), (-1, -1), 0.3, BORDER),
-        ("LINEBEFORE",    (2, 0), (2, -1), 0.5, BORDER),
-        ("VALIGN",        (0, 0), (-1, -1), "MIDDLE"),
-        ("TOPPADDING",    (0, 0), (-1, -1), 4),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
-        ("LEFTPADDING",   (0, 0), (-1, -1), 8),
-        ("RIGHTPADDING",  (0, 0), (-1, -1), 6),
-    ]))
-    st.append(cont_tbl)
+        f1, n1, _ = METRIC_ORDER_FULL[i]
+        f2, n2, _ = METRIC_ORDER_FULL[i + 1] if i + 1 < 20 else (None, "", None)
+        s1 = _get_score(metrics, f1)
+        s2 = _get_score(metrics, f2) if f2 else None
 
-    # ── 20 метрик с нормами ───────────────────────────────────────────────────
-    st += _section("ОЦЕНКА ПО 20 ПАРАМЕТРАМ")
+        # Left entry
+        _txt(c, n1, ML, y + 3.5, font=R, size=8.5, color=BLACK)
+        _txt(c, f"{s1:.2f}", ML + col_w - 5*mm, y + 3.5, font=B, size=8.5, color=_sc(s1))
 
-    hw   = round(d.get("face_hw_ratio", 0), 3)
-    vb   = round(d.get("vert_balance", 0), 3)
-    cj   = round(d.get("cheek_jaw_ratio", 0), 3)
-    ef   = round(d.get("nose_to_face", metrics.left_eye_width / fw), 3)
-    ief  = round(d.get("inner_eye_to_face", 0), 3)
-    cn   = round(d.get("canthal_norm", 0), 3)
-    nf   = round(d.get("nose_to_face", 0), 3)
-    mf   = round(d.get("mouth_to_face", 0), 3)
-    nl   = round(d.get("nose_len_ratio", 0), 3)
-    cl   = round(d.get("chin_len_ratio", 0), 3)
-    cc   = round(d.get("chin_contour", 0), 3)
-    nm   = round(d.get("nose_to_mouth", 0), 3)
-    bw   = round(d.get("biocular_width", 0), 3)
-    fr   = round(d.get("forehead_ratio", 0), 3)
-    lf   = round(d.get("lip_fullness", 0), 3)
-    lr   = round(d.get("lip_ratio", 0), 3)
-    jm   = round(d.get("jaw_to_mouth", 0), 3)
-    es   = round(d.get("eye_shape", 0), 3)
-    br   = round(d.get("brow_dist_ratio", 0), 3)
+        # Right entry
+        if f2:
+            _txt(c, n2, ML + col_w + 6*mm, y + 3.5, font=R, size=8.5, color=BLACK)
+            _txt(c, f"{s2:.2f}", ML + 2 * col_w + 3*mm, y + 3.5,
+                 font=B, size=8.5, color=_sc(s2))
 
-    params = [
-        ("01  Симметрия лица",        metrics.symmetry_score,
-         "Среднее по 3 парам",        "идеал: 10.0"),
-        ("02  Пропорции лица",         metrics.face_proportions_score,
-         f"В/Ш = {hw}",               "норма: 0.896"),
-        ("03  Вертикальный баланс",    metrics.vertical_balance_score,
-         f"Ср/Нижн = {vb}",           "норма: 0.728"),
-        ("04  Баланс скул и чел.",     metrics.cheekbones_score,
-         f"Скулы/Чел = {cj}",         "норма: 1.356"),
-        ("05  Размер глаз",            metrics.eyes_score,
-         f"Гл/Лицо = {ef}",           "норма: 0.223"),
-        ("06  Расст. между глазами",   metrics.eye_distance_score,
-         f"МГ/Лицо = {ief}",          "норма: 0.271"),
-        ("07  Наклон глаз",            metrics.canthal_tilt_score,
-         f"Угол {metrics.canthal_tilt_degrees:+.1f}°",  "+5° … +10°"),
-        ("08  Ширина носа",            metrics.nose_score,
-         f"Нос/Лицо = {nf}",          "норма: 0.234"),
-        ("09  Ширина рта",             metrics.lips_score,
-         f"Рот/Лицо = {mf}",          "норма: 0.403"),
-        ("10  Длина носа",             metrics.nose_length_score,
-         f"Дл.нос/Лицо = {nl}",       "норма: 0.421"),
-        ("11  Длина подбородка",       metrics.chin_length_score,
-         f"Подб/Лицо = {cl}",         "норма: 0.283"),
-        ("12  Контур подбородка",      metrics.chin_contour_score,
-         f"Угол сужения = {cc}",      "норма: 0.630"),
-        ("13  Нос к ширине рта",       metrics.nose_to_mouth_score,
-         f"Нос/Рот = {nm}",           "норма: 0.583"),
-        ("14  Биокулярная ширина",     metrics.biocular_score,
-         f"БОК/Лицо = {bw}",          "норма: 0.713"),
-        ("15  Ширина лба",             metrics.forehead_score,
-         f"Лб/Лицо = {fr}",           "норма: 0.919"),
-        ("16  Полнота губ",            metrics.lip_fullness_score,
-         f"Выс/Шир = {lf}",           "норма: 0.347"),
-        ("17  Пропорции губ",          metrics.lip_ratio_score,
-         f"Верх/Ниж = {lr}",          "норма: 0.639"),
-        ("18  Чел. к ширине рта",      metrics.jaw_to_mouth_score,
-         f"Чел/Рот = {jm}",           "норма: 1.810"),
-        ("19  Форма глаз",             metrics.eye_shape_score,
-         f"Выс/Шир = {es}",           "норма: 0.285"),
-        ("20  Высота бровей",          metrics.brow_height_score,
-         f"Дист/Лицо = {br}",         "норма: 0.063"),
+        _hline(c, ML, y + 5*mm, BW, color=colors.HexColor("#F0F0F0"), lw=0.3)
+        y += 5.5*mm
+
+    _footer(c, 2, 25)
+
+
+def _full_metric_page(c, metrics, metric_tuple, m_idx, page_num):
+    """Страница метрики (страницы 3–22)."""
+    field, name, num = metric_tuple
+    score = _get_score(metrics, field)
+    sc_col = _sc(score)
+
+    # Находим описание
+    body_text = what_text = influence_text = ""
+    meta_key = None
+    for sf, mk, body, what, inf in METRICS_20:
+        if sf == field:
+            body_text = body
+            what_text = what
+            influence_text = inf
+            meta_key = mk
+            break
+
+    norm_val = None
+    your_val = None
+    if meta_key and meta_key in FARKAS_NORMS:
+        _, norm_val, detail_key = FARKAS_NORMS[meta_key]
+        if detail_key:
+            your_val = metrics.details.get(detail_key)
+            if your_val is None:
+                # symmetry special case
+                if field == "symmetry_score":
+                    e = metrics.details.get("eye_symmetry", 0)
+                    ck = metrics.details.get("cheek_symmetry", 0)
+                    m = metrics.details.get("mouth_symmetry", 0)
+                    your_val = round((e + ck + m) / 30, 3)
+
+    _rect(c, 0, 0, W, H, fill=WHITE)
+
+    # Заголовок метрики
+    num_str = f"{num:02d} / 20"
+    _txt(c, name, ML, MT + 6*mm, font=B, size=13, color=BLACK)
+    _txt(c, num_str, W - MR, MT + 6*mm, font=R, size=10, color=DIM, align="right")
+    _hline(c, ML, MT + 9*mm, BW, lw=0.7)
+
+    y = MT + 13*mm
+
+    # Левая колонка: визуализация балла
+    left_w = 90*mm
+    right_w = BW - left_w - 6*mm
+    right_x = ML + left_w + 6*mm
+
+    # Бар оценки
+    bar_w = left_w - 10*mm
+    bar_x = ML + 5*mm
+    bar_y_top = y + 8*mm
+    _draw_score_bar(c, bar_x, bar_y_top, bar_w, 14*mm, score)
+
+    # Уровень
+    _txt(c, _lv(score), bar_x + bar_w / 2, bar_y_top + 18*mm,
+         font=R, size=9, color=sc_col, align="center")
+
+    # Правая колонка: информационный блок
+    _rect(c, right_x, y, right_w, 38*mm, fill=SCORE_BG, stroke=LINE, lw=0.5)
+    ry = y + 4*mm
+    _txt(c, "Балл метрики", right_x + 4, ry, font=R, size=8, color=DIM)
+    ry += 5*mm
+    _txt(c, f"{score:.2f} / 10", right_x + 4, ry, font=B, size=16, color=sc_col)
+    ry += 7*mm
+    _txt(c, "ВАШ ПОКАЗАТЕЛЬ", right_x + 4, ry, font=B, size=7, color=DIM)
+    ry += 4*mm
+    if your_val is not None:
+        _txt(c, str(your_val), right_x + 4, ry, font=R, size=10, color=BLACK)
+    _para(c, what_text, right_x + 4, ry + 3, right_w - 8, 12,
+          font=R, size=7.5, color=DIM)
+    ry += 11*mm
+    _txt(c, "НОРМА", right_x + 4, ry, font=B, size=7, color=DIM)
+    ry += 4*mm
+    if norm_val is not None:
+        _txt(c, str(round(norm_val, 3)), right_x + 4, ry, font=R, size=10, color=BLACK)
+    else:
+        _txt(c, "—", right_x + 4, ry, font=R, size=10, color=BLACK)
+
+    # Тело страницы
+    y += 43*mm
+    _para(c, body_text, ML, y, BW, 45,
+          font=R, size=10, color=BLACK, align=TA_JUSTIFY, leading=15)
+    y += 47*mm
+
+    # Блок влияния
+    infl_h = 22*mm
+    _rect(c, ML, y, BW, infl_h, fill=INFL_BG, stroke=INFL_BD, lw=0.8)
+    _txt(c, "ВЛИЯНИЕ", ML + 5, y + 5*mm, font=B, size=8, color=INFL_BD)
+    _para(c, influence_text, ML + 5, y + 6*mm, BW - 10, infl_h - 7*mm,
+          font=R, size=9.5, color=BLACK, align=TA_JUSTIFY)
+
+    _footer(c, page_num, 25)
+
+
+def _full_rec_page(c, title, content_blocks, page_num):
+    """Страница рекомендаций."""
+    _rect(c, 0, 0, W, H, fill=WHITE)
+    _header(c)
+
+    y = MT + 14*mm
+    _txt(c, title, ML, y, font=B, size=14, color=BLACK)
+    _hline(c, ML, y + 4*mm, BW)
+    y += 10*mm
+
+    for block_title, block_text in content_blocks:
+        # Заголовок блока
+        _rect(c, ML, y, BW, 7*mm, fill=LGRAY)
+        _txt(c, block_title, ML + 4, y + 4.5*mm, font=B, size=9.5, color=BLACK)
+        y += 9*mm
+        _para(c, block_text, ML, y, BW, 30,
+              font=R, size=9.5, color=BLACK, align=TA_JUSTIFY)
+        y += 32*mm
+        if y > H - 30*mm:
+            break
+
+
+def generate_full_pdf(metrics: FaceMetrics, name: str = "") -> bytes:
+    buf = io.BytesIO()
+    c = pdfgen_canvas.Canvas(buf, pagesize=A4)
+
+    # Страница 1: обложка
+    _full_cover(c, metrics)
+    c.showPage()
+
+    # Страница 2: обзор
+    _full_overview(c, metrics)
+    c.showPage()
+
+    # Страницы 3–22: 20 метрик
+    for i, metric_tuple in enumerate(METRIC_ORDER_FULL):
+        _full_metric_page(c, metrics, metric_tuple, i, page_num=3 + i)
+        c.showPage()
+
+    # Страницы 23–25: рекомендации
+    all_scores = [(f, getattr(metrics, f, 5.0)) for f, _, __ in METRIC_ORDER_FULL]
+    sorted_asc = sorted(all_scores, key=lambda x: x[1])
+    weak_5 = sorted_asc[:5]
+    name_map = {f: n for f, n, _ in METRIC_ORDER_FULL}
+
+    # Страница 23: Слабые зоны
+    blocks_23 = []
+    for wf, ws in weak_5[:3]:
+        wn = name_map[wf]
+        advice = METRIC_ADVICE.get(wf, "Работай над этой метрикой системно.")
+        blocks_23.append((f"{wn}  —  {ws:.2f} / 10", advice))
+
+    _rect(c, 0, 0, W, H, fill=WHITE)
+    _header(c)
+    y23 = MT + 14*mm
+    _txt(c, "Рекомендации по слабым зонам", ML, y23, font=B, size=14, color=BLACK)
+    _hline(c, ML, y23 + 4*mm, BW)
+    y23 += 10*mm
+    _para(c,
+          "Ниже представлены конкретные шаги по улучшению трёх наиболее слабых метрик твоего лица. "
+          "Начни с первого пункта — он даст максимальный эффект.",
+          ML, y23, BW, 16, font=R, size=10, color=GRAY, align=TA_JUSTIFY)
+    y23 += 18*mm
+
+    for block_title, block_text in blocks_23:
+        _rect(c, ML, y23, BW, 7*mm, fill=LGRAY)
+        _txt(c, block_title, ML + 4, y23 + 4.5*mm, font=B, size=9.5, color=BLACK)
+        y23 += 9*mm
+        _para(c, block_text, ML, y23, BW, 28,
+              font=R, size=9.5, color=BLACK, align=TA_JUSTIFY)
+        y23 += 32*mm
+
+    _footer(c, 23, 25)
+    c.showPage()
+
+    # Страница 24: Ещё 2 зоны + уход
+    blocks_24 = []
+    for wf, ws in weak_5[3:5]:
+        wn = name_map[wf]
+        advice = METRIC_ADVICE.get(wf, "Работай над этой метрикой системно.")
+        blocks_24.append((f"{wn}  —  {ws:.2f} / 10", advice))
+
+    _rect(c, 0, 0, W, H, fill=WHITE)
+    _header(c)
+    y24 = MT + 14*mm
+    _txt(c, "Уход и стиль", ML, y24, font=B, size=14, color=BLACK)
+    _hline(c, ML, y24 + 4*mm, BW)
+    y24 += 10*mm
+
+    for block_title, block_text in blocks_24:
+        _rect(c, ML, y24, BW, 7*mm, fill=LGRAY)
+        _txt(c, block_title, ML + 4, y24 + 4.5*mm, font=B, size=9.5, color=BLACK)
+        y24 += 9*mm
+        _para(c, block_text, ML, y24, BW, 28,
+              font=R, size=9.5, color=BLACK, align=TA_JUSTIFY)
+        y24 += 32*mm
+
+    care_blocks = [
+        ("Базовый уход за кожей",
+         "SPF 30–50 каждый день без исключений — главный антивозрастной инструмент. "
+         "Увлажняющий крем утром и вечером. Ретинол 0.025% на ночь раз в неделю — "
+         "выравнивает текстуру и поры. Через 3 месяца результат будет заметен."),
+        ("Сон и образ жизни",
+         "7–9 часов сна снижают отёчность и улучшают кожу. "
+         "Вода 2.5–3 л/день убирает задержку жидкости в лице. "
+         "Ограничь сахар и переработанные продукты — кожа реагирует в течение 2–3 дней."),
     ]
-    st.append(_params_table(params))
+    for block_title, block_text in care_blocks:
+        if y24 > H - 50*mm:
+            break
+        _rect(c, ML, y24, BW, 7*mm, fill=LGRAY)
+        _txt(c, block_title, ML + 4, y24 + 4.5*mm, font=B, size=9.5, color=BLACK)
+        y24 += 9*mm
+        _para(c, block_text, ML, y24, BW, 28,
+              font=R, size=9.5, color=BLACK, align=TA_JUSTIFY)
+        y24 += 32*mm
 
-    # ── Антропометрия ─────────────────────────────────────────────────────────
-    up  = round(d.get("upper_third_pct", 0), 1)
-    mi  = round(d.get("middle_third_pct", 0), 1)
-    lo  = round(d.get("lower_third_pct", 0), 1)
-    ipr = round(metrics.interpupillary_distance / fw, 3) if fw else 0
+    _footer(c, 24, 25)
+    c.showPage()
 
-    st += _section("АНТРОПОМЕТРИЧЕСКИЕ ИЗМЕРЕНИЯ")
-    mrows = [
-        ["Ширина лица",       f"{metrics.face_width:.0f} пx",   "Высота лица",         f"{metrics.face_height:.0f} пx"],
-        ["Лев. глаз (шир.)",  f"{metrics.left_eye_width:.1f}",  "Прав. глаз (шир.)",   f"{metrics.right_eye_width:.1f}"],
-        ["Ширина носа",       f"{metrics.nose_width:.1f}",       "Ширина рта",          f"{metrics.mouth_width:.1f}"],
-        ["МЗР",               f"{metrics.interpupillary_distance:.1f}", "МЗР/Лицо",    f"{ipr}"],
-        ["Верхняя треть",     f"{metrics.upper_third:.1f}",     "Верхняя, %",           f"{up}%"],
-        ["Средняя треть",     f"{metrics.middle_third:.1f}",    "Средняя, %",           f"{mi}%"],
-        ["Нижняя треть",      f"{metrics.lower_third:.1f}",     "Нижняя, %",            f"{lo}%"],
+    # Страница 25: Итог
+    _rect(c, 0, 0, W, H, fill=WHITE)
+    _header(c)
+    y25 = MT + 14*mm
+    _txt(c, "Итог и план действий", ML, y25, font=B, size=14, color=BLACK)
+    _hline(c, ML, y25 + 4*mm, BW)
+    y25 += 12*mm
+
+    top = _top_pct(metrics.overall_score)
+    _para(c,
+          f"Твой итоговый балл {metrics.overall_score:.2f}/10 ставит тебя в топ {top} "
+          f"по геометрии лица. Это объективный результат — хорошая база для работы.",
+          ML, y25, BW, 20, font=B, size=11, color=BLACK, align=TA_CENTER)
+    y25 += 22*mm
+
+    all_strong_3 = sorted(all_scores, key=lambda x: x[1], reverse=True)[:3]
+    _txt(c, "Твои сильные стороны:", ML, y25, font=B, size=10, color=BLACK)
+    y25 += 6*mm
+    for sf, ss in all_strong_3:
+        _txt(c, f"  ●  {name_map[sf]}  —  {ss:.2f}/10", ML + 4, y25,
+             font=R, size=10, color=C_HIGH)
+        y25 += 5.5*mm
+
+    y25 += 5*mm
+    _txt(c, "С чего начать:", ML, y25, font=B, size=10, color=BLACK)
+    y25 += 7*mm
+
+    action_plan = [
+        "1.   Пройди по рекомендациям из страниц 23–24 — начни с первого пункта.",
+        "2.   Введи базовый уход за кожей (SPF + увлажнение + ретинол).",
+        "3.   Начни мьюинг — это долгосрочное изменение структуры лица.",
+        "4.   Оптимизируй сон и питание — быстрый вклад в качество кожи.",
+        "5.   Сделай повторный разбор через 6–12 месяцев, чтобы отследить прогресс.",
     ]
-    st.append(_meas_table(mrows))
+    for step in action_plan:
+        _para(c, step, ML, y25, BW, 14, font=R, size=10, color=BLACK)
+        y25 += 15*mm
 
-    # ── Персональные советы ───────────────────────────────────────────────────
-    st += _section("ПЕРСОНАЛЬНЫЕ СОВЕТЫ — ВНЕШНОСТЬ И УХОД")
-    for emoji, title, text in _advice(metrics):
-        st.append(_advice_card(emoji, title, text))
-        st.append(Spacer(1, 3*mm))
+    y25 += 5*mm
+    _hline(c, ML, y25, BW)
+    y25 += 10*mm
 
-    # ── Шкала оценок ──────────────────────────────────────────────────────────
-    st.append(Spacer(1, 2*mm))
-    st.append(HRFlowable(width="100%", thickness=0.5, color=BORDER, spaceAfter=2*mm))
-    st.append(Paragraph("ШКАЛА ОЦЕНОК",
-                         _s("sc", fontName=BOLD, fontSize=10, textColor=GOLDB, spaceAfter=2*mm)))
-    scale = [
-        ("SSS", "9.5+", "Легендарная"),
-        ("SS",  "9.0+", "Исключительная"),
-        ("S",   "8.5+", "Высокая привлекательность"),
-        ("A+",  "8.0+", "Выше среднего"),
-        ("A",   "7.0+", "Привлекательный"),
-        ("B",   "6.0+", "Чуть выше нормы"),
-        ("C",   "5.0+", "Средний"),
-        ("D",   "4.0+", "Ниже среднего"),
-        ("E",   "<4.0", "Требует работы"),
-    ]
-    rows3 = [scale[i:i+3] for i in range(0, len(scale), 3)]
-    flat  = []
-    for row in rows3:
-        cells = []
-        for g, v, l in row:
-            cells += [
-                Paragraph(g, _s("sg", fontName=BOLD, fontSize=8, textColor=GOLDB, alignment=TA_CENTER)),
-                Paragraph(v, _s("sv", fontSize=8, textColor=TEXT, alignment=TA_CENTER)),
-                Paragraph(l, _s("sl", fontSize=8, textColor=DIM)),
-            ]
-        while len(cells) < 9:
-            cells.append(Paragraph("", _s("se", fontSize=8)))
-        flat.append(cells)
-    sc_tbl = Table(flat, colWidths=[18*mm, 18*mm, 38*mm] * 3)
-    sc_tbl.setStyle(TableStyle([
-        ("ROWBACKGROUNDS", (0, 0), (-1, -1), [PANEL, PANEL2]),
-        ("BOX",           (0, 0), (-1, -1), 0.5, BORDER),
-        ("INNERGRID",     (0, 0), (-1, -1), 0.3, BORDER),
-        ("TOPPADDING",    (0, 0), (-1, -1), 3),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
-        ("LEFTPADDING",   (0, 0), (-1, -1), 5),
-    ]))
-    st.append(sc_tbl)
-    st.append(Spacer(1, 5*mm))
-    st.append(HRFlowable(width="100%", thickness=1.5, color=GOLD, spaceAfter=2*mm))
-    st.append(Paragraph(
-        "Facedex  •  Математический анализ гармонии лица  •  Только для развлечения",
-        _s("ft", fontSize=8, textColor=DIM, alignment=TA_CENTER)))
+    _para(c,
+          "Красота — это не данность, а процесс. Геометрия задаёт фундамент, "
+          "стиль и уход раскрывают его потенциал.",
+          ML, y25, BW, 16, font=B, size=11, color=GRAY, align=TA_CENTER)
+    y25 += 20*mm
 
-    doc.build(st, onFirstPage=_dark_bg, onLaterPages=_dark_bg)
+    # Финальный блок-кнопка
+    btn_h = 12*mm
+    _rect(c, ML, y25, BW, btn_h, fill=BLACK)
+    _txt(c, f"Telegram: {HANDLE}  —  Facedex",
+         W / 2, y25 + btn_h / 2 + 1.5*mm, font=B, size=11, color=WHITE, align="center")
+
+    _footer(c, 25, 25)
+    c.showPage()
+
+    c.save()
     return buf.getvalue()
-
-
-def generate_pdf(metrics: FaceMetrics, username: str = "user") -> bytes:
-    return generate_full_pdf(metrics, username)
