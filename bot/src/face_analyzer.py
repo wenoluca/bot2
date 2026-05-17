@@ -399,19 +399,22 @@ def analyze_face(image_bytes: bytes) -> Optional[FaceMetrics]:
                                            direction="down")   # уже нос = лучше
     lips_score              = _sigma_score(mouth_to_face,     *FARKAS["mouth_to_face"])
     nose_length_score       = _sigma_score(nose_len_ratio,    *FARKAS["nose_length"])
-    chin_length_score       = _sigma_score(chin_len_ratio,    *FARKAS["chin_length"])
+    chin_length_score       = _sigma_score(chin_len_ratio,    *FARKAS["chin_length"],
+                                           direction="up")     # выраженный подбородок = плюс
     chin_contour_score      = _sigma_score(chin_contour,      *FARKAS["chin_contour"],
                                            direction="down")   # более V = лучше
     nose_to_mouth_score     = _sigma_score(nose_to_mouth,     *FARKAS["nose_to_mouth"])
     biocular_score          = _sigma_score(biocular_width,    *FARKAS["biocular_width"])
     forehead_score          = _sigma_score(forehead_ratio,    *FARKAS["forehead_width"],
                                            direction="up")     # шире лоб = мужественнее
-    lip_fullness_score      = _sigma_score(lip_fullness,      *FARKAS["lip_fullness"])
+    lip_fullness_score      = _sigma_score(lip_fullness,      *FARKAS["lip_fullness"],
+                                           direction="up")     # умеренный объём = плюс, тонкие = минус
     lip_ratio_score         = _sigma_score(lip_ratio,         *FARKAS["lip_ratio"])
     jaw_to_mouth_score      = _sigma_score(jaw_to_mouth_r,    *FARKAS["jaw_to_mouth"],
                                            direction="up")     # шире челюсть/рот = лучше
     eye_shape_score         = _sigma_score(eye_shape_r,       *FARKAS["eye_shape"])
-    brow_height_score       = _sigma_score(brow_dist_r,       *FARKAS["brow_height"])
+    brow_height_score       = _sigma_score(brow_dist_r,       *FARKAS["brow_height"],
+                                           direction="down")   # малое расстояние бровь-глаз = привлекательнее
 
     jaw_score = cheekbones_score  # синоним (уже направленный)
 
