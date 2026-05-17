@@ -316,21 +316,21 @@ def analyze_face(image_bytes: bytes) -> Optional[FaceMetrics]:
     symmetry_raw = (eye_sym + cheek_sym + mouth_sym) / 3.0
     symmetry_score = round(max(2.0, min(10.0, symmetry_raw * 10.0 + 0.5)), 2)
 
-    # ── Кантальный тильт (по нормализованному значению) ─────────────────────
-    # Вектор от outer к inner для ЛЕВОГО глаза в пространстве (y вверх → negate image y)
-    dx_l = left_eye_inner[0] - left_eye_outer[0]
-    dy_l = -(left_eye_inner[1] - left_eye_outer[1])   # flip y for math coords
-    left_tilt_rad = math.atan2(dy_l, dx_l)
+    # ── Кантальный тильт ────────────────────────────────────────────────────
+    # Позитивный тильт = внешний угол глаза ВЫШЕ внутреннего (hunter eyes).
+    # В координатах изображения y растёт вниз, поэтому:
+    #   outer.y < inner.y  →  inner.y - outer.y > 0  →  позитивный тильт.
+    # slope = (inner.y - outer.y) / горизонтальное расстояние
+    # Для левого глаза: inner правее outer → inner.x - outer.x > 0
+    # Для правого глаза: inner левее outer → outer.x - inner.x > 0
+    left_h  = max(abs(left_eye_inner[0]  - left_eye_outer[0]),  1.0)
+    right_h = max(abs(right_eye_outer[0] - right_eye_inner[0]), 1.0)
 
-    dx_r = right_eye_inner[0] - right_eye_outer[0]
-    dy_r = -(right_eye_inner[1] - right_eye_outer[1])
-    right_tilt_rad = math.atan2(dy_r, abs(dx_r))
+    left_slope  = (left_eye_inner[1]  - left_eye_outer[1])  / left_h
+    right_slope = (right_eye_inner[1] - right_eye_outer[1]) / right_h
 
-    canthal_tilt_degrees = round(math.degrees((left_tilt_rad + right_tilt_rad) / 2), 2)
-
-    # Нормализованный тильт (наклон / ширина глаза) для Farkas
-    canthal_norm = math.tan(math.radians(abs(canthal_tilt_degrees))) if avg_eye_width > 0 else 0
-    canthal_norm = canthal_norm if canthal_tilt_degrees >= 0 else -canthal_norm
+    canthal_norm         = (left_slope + right_slope) / 2.0
+    canthal_tilt_degrees = round(math.degrees(math.atan(canthal_norm)), 2)
 
     # Положительный тильт (hunter eyes) награждается
     canthal_tilt_score = _sigma_score(canthal_norm, FARKAS["canthal_tilt"][0],
