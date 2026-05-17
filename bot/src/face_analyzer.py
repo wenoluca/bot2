@@ -80,6 +80,8 @@ class FaceMetrics:
     jaw_to_mouth_score: float = 0.0          # челюсть к ширине рта
     eye_shape_score: float = 0.0             # форма глаз
     brow_height_score: float = 0.0           # высота бровей
+    jaw_angle_score: float = 0.0             # угол нижней челюсти (gonial angle)
+    jaw_angle_deg: float = 0.0               # измеренный угол в градусах
 
     # Raw measurements (pixels)
     face_width: float = 0.0
@@ -103,6 +105,17 @@ def _dist(p1, p2):
 
 def _midpoint(p1, p2):
     return ((p1[0] + p2[0]) / 2, (p1[1] + p2[1]) / 2)
+
+
+def _angle_at_vertex(p1, vertex, p2) -> float:
+    """Угол в градусах в точке vertex между лучами vertex→p1 и vertex→p2."""
+    v1 = (p1[0] - vertex[0], p1[1] - vertex[1])
+    v2 = (p2[0] - vertex[0], p2[1] - vertex[1])
+    mag = math.sqrt(v1[0]**2 + v1[1]**2) * math.sqrt(v2[0]**2 + v2[1]**2)
+    if mag < 1e-6:
+        return 130.0
+    cos_a = max(-1.0, min(1.0, (v1[0]*v2[0] + v1[1]*v2[1]) / mag))
+    return math.degrees(math.acos(cos_a))
 
 
 def _sigma_score(value, mean, std, direction="both", min_score=4.5):
@@ -281,6 +294,17 @@ def analyze_face(image_bytes: bytes) -> Optional[FaceMetrics]:
     jaw_right = pt(397)
     jaw_width = _dist(jaw_left, jaw_right)
 
+    # ── Gonial angle (угол нижней челюсти) ───────────────────────────────────
+    # Угол в точке jaw_left/jaw_right между:
+    #   • ветвью к скуле (ramus direction: pt(234) left cheek / pt(454) right cheek)
+    #   • телом к подбородку (body direction: chin pt(152))
+    # Мужской идеал ≈ 120–125°; тупой угол (~145°+) = слабая челюсть
+    left_gonial  = _angle_at_vertex(left_cheek, jaw_left,  chin)
+    right_gonial = _angle_at_vertex(right_cheek, jaw_right, chin)
+    jaw_angle_deg_raw = (left_gonial + right_gonial) / 2.0
+    # Норма мужчин: ~125° (std 12°). direction="down" — острее = лучше
+    jaw_angle_score  = _sigma_score(jaw_angle_deg_raw, 125.0, 12.0, direction="down")
+
     chin_narrow_left  = pt(175)
     chin_narrow_right = pt(396)
 
@@ -421,22 +445,23 @@ def analyze_face(image_bytes: bytes) -> Optional[FaceMetrics]:
     eyebrows_score = brow_height_score
     balance_score  = round((golden_ratio_score + symmetry_score + thirds_score) / 3.0, 2)
 
-    # ── Итоговый балл (взвешенное среднее 20 метрик) ─────────────────────────
+    # ── Итоговый балл (взвешенное среднее 21 метрики) ────────────────────────
     # Веса настроены под лукмаксинг-стандарты:
-    # — симметрия важна, но не доминирует (снижена с 12% → 7%)
-    # — кантальный тильт, челюсть, подбородок, форма глаз — усилены
+    # — кантальный тильт, gonial angle, ширина челюсти — ключевые
+    # — симметрия важна, но не доминирует
     weights = {
-        "symmetry":         0.07,   # важна, но не главная
-        "proportions":      0.08,
-        "thirds":           0.06,
-        "canthal":          0.13,   # hunter eyes — ключевая метрика в лукмаксинге
-        "cheekbones":       0.09,   # скулы/челюсть — основа мужественности
+        "symmetry":         0.06,   # важна, но не главная
+        "proportions":      0.07,
+        "thirds":           0.05,
+        "canthal":          0.12,   # hunter eyes — ключевая метрика в лукмаксинге
+        "cheekbones":       0.08,   # скулы/челюсть — основа мужественности
+        "jaw_angle":        0.07,   # gonial angle — угол нижней челюсти (новая метрика)
         "eyes":             0.06,
         "eye_distance":     0.04,
-        "nose":             0.04,
-        "mouth":            0.04,
+        "nose":             0.03,
+        "mouth":            0.03,
         "nose_length":      0.03,
-        "chin_length":      0.06,   # выраженный подбородок = плюс
+        "chin_length":      0.05,   # выраженный подбородок = плюс
         "chin_contour":     0.04,
         "nose_to_mouth":    0.03,
         "biocular":         0.03,
@@ -444,9 +469,9 @@ def analyze_face(image_bytes: bytes) -> Optional[FaceMetrics]:
         "lip_fullness":     0.03,
         "lip_ratio":        0.02,
         "jaw_to_mouth":     0.06,   # ширина челюсти — важна в лукмаксинге
-        "eye_shape":        0.06,   # форма/разрез глаз
+        "eye_shape":        0.05,   # форма/разрез глаз
         "brow":             0.03,
-        "golden_ratio":     0.03,
+        "golden_ratio":     0.02,
     }
     weighted = (
         symmetry_score          * weights["symmetry"]
@@ -454,6 +479,7 @@ def analyze_face(image_bytes: bytes) -> Optional[FaceMetrics]:
         + thirds_score           * weights["thirds"]
         + canthal_tilt_score     * weights["canthal"]
         + cheekbones_score       * weights["cheekbones"]
+        + jaw_angle_score        * weights["jaw_angle"]
         + eyes_score             * weights["eyes"]
         + eye_distance_score     * weights["eye_distance"]
         + nose_score             * weights["nose"]
@@ -479,10 +505,10 @@ def analyze_face(image_bytes: bytes) -> Optional[FaceMetrics]:
     # значительно привлекательнее, чем простое среднее — эффект синергии.
     all_metric_scores = [
         symmetry_score, face_proportions_score, thirds_score, canthal_tilt_score,
-        cheekbones_score, eyes_score, eye_distance_score, nose_score, lips_score,
-        nose_length_score, chin_length_score, chin_contour_score, nose_to_mouth_score,
-        biocular_score, forehead_score, lip_fullness_score, lip_ratio_score,
-        jaw_to_mouth_score, eye_shape_score, brow_height_score,
+        cheekbones_score, jaw_angle_score, eyes_score, eye_distance_score, nose_score,
+        lips_score, nose_length_score, chin_length_score, chin_contour_score,
+        nose_to_mouth_score, biocular_score, forehead_score, lip_fullness_score,
+        lip_ratio_score, jaw_to_mouth_score, eye_shape_score, brow_height_score,
     ]
     above_norm = sum(1 for s in all_metric_scores if s >= 7.0)
     harmony_bonus = 0.0
@@ -589,6 +615,8 @@ def analyze_face(image_bytes: bytes) -> Optional[FaceMetrics]:
         jaw_to_mouth_score=jaw_to_mouth_score,
         eye_shape_score=eye_shape_score,
         brow_height_score=brow_height_score,
+        jaw_angle_score=jaw_angle_score,
+        jaw_angle_deg=round(jaw_angle_deg_raw, 1),
         # Raw
         face_width=round(face_width, 1),
         face_height=round(face_height, 1),
@@ -611,6 +639,9 @@ def analyze_face(image_bytes: bytes) -> Optional[FaceMetrics]:
             "cheek_symmetry":       round(cheek_sym * 10, 2),
             "mouth_symmetry":       round(mouth_sym * 10, 2),
             "cheek_jaw_ratio":      round(cheek_jaw_ratio, 3),
+            "jaw_angle_deg":        round(jaw_angle_deg_raw, 1),
+            "left_gonial_deg":      round(left_gonial, 1),
+            "right_gonial_deg":     round(right_gonial, 1),
             "eye_to_face":          round(eye_to_face, 3),
             "nose_to_face":         round(nose_to_face, 3),
             "mouth_to_face":        round(mouth_to_face, 3),
