@@ -342,27 +342,45 @@ def analyze_face(image_bytes: bytes) -> Optional[FaceMetrics]:
     thirds_score = round(max(2.0, 10.0 - thirds_dev * 25.0), 2)
 
     # ── Оценки по всем метрикам ───────────────────────────────────────────────
+    #
+    # direction:
+    #   "both" — штраф в обе стороны от Farkas нормы
+    #   "up"   — штраф только НИЖЕ нормы (высокое = хорошо для мужчин)
+    #   "down" — штраф только ВЫШЕ нормы (низкое = хорошо для мужчин)
+    #
+    # Маскулинные направления:
+    #   cheek_jaw (face_w/jaw_w): нижнее → шире челюсть → мужественнее → direction="down"
+    #   jaw_to_mouth: выше → шире челюсть относительно рта → direction="up"
+    #   canthal_tilt: выше (hunter eyes) → direction="up"  (уже задано выше)
+    #   chin_contour: ниже → более V-образный подбородок → direction="down"
+    #   nose_len: "both" — и слишком длинный, и слишком короткий нехорошо
+    #
     golden_ratio_score      = _golden_ratio_score(face_height, face_width)
-    face_proportions_score  = _sigma_score(hw_ratio,       *FARKAS["face_hw_ratio"])
-    vertical_balance_score  = _sigma_score(vert_balance,   *FARKAS["vertical_balance"])
-    cheekbones_score        = _sigma_score(cheek_jaw_ratio,*FARKAS["cheek_jaw"])
-    eyes_score              = _sigma_score(eye_to_face,    *FARKAS["eye_to_face"])
+    face_proportions_score  = _sigma_score(hw_ratio,          *FARKAS["face_hw_ratio"])
+    vertical_balance_score  = _sigma_score(vert_balance,      *FARKAS["vertical_balance"])
+    cheekbones_score        = _sigma_score(cheek_jaw_ratio,   *FARKAS["cheek_jaw"],
+                                           direction="down")   # шире челюсть = лучше
+    eyes_score              = _sigma_score(eye_to_face,       *FARKAS["eye_to_face"])
     eye_distance_score      = _sigma_score(inner_eye_to_face, *FARKAS["inner_eye_to_face"])
-    nose_score              = _sigma_score(nose_to_face,   *FARKAS["nose_to_face"])
-    lips_score              = _sigma_score(mouth_to_face,  *FARKAS["mouth_to_face"])
-    nose_length_score       = _sigma_score(nose_len_ratio, *FARKAS["nose_length"])
-    chin_length_score       = _sigma_score(chin_len_ratio, *FARKAS["chin_length"])
-    chin_contour_score      = _sigma_score(chin_contour,   *FARKAS["chin_contour"])
-    nose_to_mouth_score     = _sigma_score(nose_to_mouth,  *FARKAS["nose_to_mouth"])
-    biocular_score          = _sigma_score(biocular_width, *FARKAS["biocular_width"])
-    forehead_score          = _sigma_score(forehead_ratio, *FARKAS["forehead_width"])
-    lip_fullness_score      = _sigma_score(lip_fullness,   *FARKAS["lip_fullness"])
-    lip_ratio_score         = _sigma_score(lip_ratio,      *FARKAS["lip_ratio"])
-    jaw_to_mouth_score      = _sigma_score(jaw_to_mouth_r, *FARKAS["jaw_to_mouth"])
-    eye_shape_score         = _sigma_score(eye_shape_r,    *FARKAS["eye_shape"])
-    brow_height_score       = _sigma_score(brow_dist_r,    *FARKAS["brow_height"])
+    nose_score              = _sigma_score(nose_to_face,      *FARKAS["nose_to_face"],
+                                           direction="down")   # уже нос = лучше
+    lips_score              = _sigma_score(mouth_to_face,     *FARKAS["mouth_to_face"])
+    nose_length_score       = _sigma_score(nose_len_ratio,    *FARKAS["nose_length"])
+    chin_length_score       = _sigma_score(chin_len_ratio,    *FARKAS["chin_length"])
+    chin_contour_score      = _sigma_score(chin_contour,      *FARKAS["chin_contour"],
+                                           direction="down")   # более V = лучше
+    nose_to_mouth_score     = _sigma_score(nose_to_mouth,     *FARKAS["nose_to_mouth"])
+    biocular_score          = _sigma_score(biocular_width,    *FARKAS["biocular_width"])
+    forehead_score          = _sigma_score(forehead_ratio,    *FARKAS["forehead_width"],
+                                           direction="up")     # шире лоб = мужественнее
+    lip_fullness_score      = _sigma_score(lip_fullness,      *FARKAS["lip_fullness"])
+    lip_ratio_score         = _sigma_score(lip_ratio,         *FARKAS["lip_ratio"])
+    jaw_to_mouth_score      = _sigma_score(jaw_to_mouth_r,    *FARKAS["jaw_to_mouth"],
+                                           direction="up")     # шире челюсть/рот = лучше
+    eye_shape_score         = _sigma_score(eye_shape_r,       *FARKAS["eye_shape"])
+    brow_height_score       = _sigma_score(brow_dist_r,       *FARKAS["brow_height"])
 
-    jaw_score = _sigma_score(cheek_jaw_ratio, *FARKAS["cheek_jaw"])
+    jaw_score = cheekbones_score  # синоним (уже направленный)
 
     eyebrows_score = brow_height_score
     balance_score  = round((golden_ratio_score + symmetry_score + thirds_score) / 3.0, 2)

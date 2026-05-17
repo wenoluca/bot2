@@ -71,6 +71,15 @@ def _lv(s):
     if s >= 4.0: return "Ниже среднего"
     return "Низко"
 
+
+def _lv_desc(s):
+    """Расшифровка уровня — что именно означает этот балл для данной метрики."""
+    if s >= 9.0: return "Топ 3% — редкое сочетание пропорций"
+    if s >= 7.5: return "Заметно выигрышная черта, усиливает общее впечатление"
+    if s >= 5.5: return "В пределах нормы, не выделяется ни в плюс ни в минус"
+    if s >= 4.0: return "Слабое место — стоит проработать в первую очередь"
+    return "Приоритетная зона роста, заметно снижает гармонию"
+
 def _tier_label(t):
     return {"HTN": "High Tier Normie",
             "MTN": "Mid Tier Normie",
@@ -1096,13 +1105,17 @@ def _full_metric_page(c, metrics, metric_tuple, m_idx, page_num):
     # ── Колонка 1: Спидометр ──────────────────────────────────────────────
     gauge_r  = 25*mm
     gauge_cx = ML + col1_w / 2
-    gauge_cy = _c(y + gauge_r + 12*mm)   # canvas y (from bottom)
+    gauge_cy = _c(y + gauge_r + 10*mm)   # canvas y (from bottom)
     _draw_gauge(c, gauge_cx, gauge_cy, gauge_r, score)
 
     # Уровень под спидометром
-    level_y = y + gauge_r * 2 + 16*mm
+    level_y = y + gauge_r * 2 + 13*mm
     _txt(c, _lv(score), ML + col1_w / 2, level_y, font=B, size=10,
          color=sc_col, align="center")
+
+    # Описание уровня
+    _para(c, _lv_desc(score), ML + 2, level_y + 5*mm, col1_w - 4, 16,
+          font=R, size=7.5, color=DIM, align=TA_CENTER)
 
     # ── Колонка 2: Инфо-панель ────────────────────────────────────────────
     panel_h = gauge_r * 2 + 16*mm
