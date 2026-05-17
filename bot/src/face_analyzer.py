@@ -98,12 +98,14 @@ def _midpoint(p1, p2):
     return ((p1[0] + p2[0]) / 2, (p1[1] + p2[1]) / 2)
 
 
-def _sigma_score(value, mean, std, direction="both", min_score=2.0):
+def _sigma_score(value, mean, std, direction="both", min_score=1.5):
     """
-    Оценка 2–10 по числу σ от нормы.
+    Оценка 1.5–10 по числу σ от нормы.
     direction='both'  — штраф в обе стороны от нормы
     direction='up'    — штраф только за значения НИЖЕ нормы (высокие значения хорошо)
     direction='down'  — штраф только за значения ВЫШЕ нормы (низкие значения хорошо)
+    Крутая шкала: среднее = 10, каждый σ −2.8 балла.
+    Это даёт реальную дифференциацию: красивые → 8–10, средние → 4–6, некрасивые → 2–4.
     """
     if std == 0:
         return 10.0
@@ -116,8 +118,8 @@ def _sigma_score(value, mean, std, direction="both", min_score=2.0):
     else:
         dev = max(0.0, z)    # штраф когда значение выше нормы
 
-    # Плавное снижение: каждый σ отнимает ~1.5 балла
-    score = 10.0 - dev * 1.5
+    # Крутое снижение: каждый σ отнимает 2.8 балла
+    score = 10.0 - dev * 2.8
     return round(max(min_score, min(10.0, score)), 2)
 
 
@@ -409,9 +411,9 @@ def analyze_face(image_bytes: bytes) -> Optional[FaceMetrics]:
         + brow_height_score      * weights["brow"]
         + golden_ratio_score     * weights["golden_ratio"]
     )
-    # normalize since weights sum > 1 due to golden_ratio extra
+    # normalize: weighted avg already on 1.5–10 scale
     weight_total = sum(weights.values())
-    overall = round(max(2.0, min(10.0, weighted / weight_total * 10.0 / 9.5)), 2)
+    overall = round(max(1.5, min(10.0, weighted / weight_total)), 2)
 
     grade = _get_grade(overall)
     tier  = _get_tier(overall)

@@ -1,5 +1,5 @@
 """
-PDF-генератор Facedex — белая тема, точная копия дизайна Face Aura.
+PDF-генератор Facedex — тёмная тема, мужской лукс-мэксинг.
 Краткий разбор: 2 страницы.
 Полный разбор:  25 страниц.
 """
@@ -37,25 +37,27 @@ MT = 16 * mm        # top margin
 MB = 14 * mm        # bottom margin
 BW = W - ML - MR   # body width ≈ 481 pt
 
-# ── Цвета (белая тема) ────────────────────────────────────────────────────────
-WHITE   = colors.HexColor("#FFFFFF")
-BLACK   = colors.HexColor("#111111")
-GRAY    = colors.HexColor("#555555")
-DIM     = colors.HexColor("#888888")
-LGRAY   = colors.HexColor("#F5F5F5")
-LINE    = colors.HexColor("#DEDEDE")
-C_HIGH  = colors.HexColor("#1B5E20")   # зелёный
-C_MID   = colors.HexColor("#E65100")   # оранжевый
-C_LOW   = colors.HexColor("#B71C1C")   # красный
-INFL_BG = colors.HexColor("#EEF3FF")   # фон блока влияния
-INFL_BD = colors.HexColor("#1565C0")   # граница
-SCORE_BG = colors.HexColor("#FAFAFA")  # фон панели балла
+# ── Цвета (тёмная тема) ───────────────────────────────────────────────────────
+BG        = colors.HexColor("#0C0C0C")    # фон страниц
+SURFACE   = colors.HexColor("#181818")   # поверхность карточек
+CARD      = colors.HexColor("#222222")   # карточки светлее
+PANEL     = colors.HexColor("#2A2A2A")   # панели/секции
+WHITE_TXT = colors.HexColor("#EEEEEE")   # основной текст
+DIM       = colors.HexColor("#777777")   # приглушённый текст
+LINE      = colors.HexColor("#333333")   # разделители
+C_HIGH    = colors.HexColor("#00E676")   # зелёный — высокий балл
+C_MID     = colors.HexColor("#FF9100")   # оранжевый — средний
+C_LOW     = colors.HexColor("#FF1744")   # красный — низкий
+GOLD      = colors.HexColor("#FFD700")   # золотой акцент
+INFL_BG   = colors.HexColor("#0D1B3E")   # блок влияния
+INFL_BD   = colors.HexColor("#4A6CF7")   # граница блока влияния
+SCORE_BG  = SURFACE
 
 BOT    = "Facedex"
 HANDLE = "@facedex_bot"
 
 # ── Вспомогательные ──────────────────────────────────────────────────────────
-def _c(y_top): return H - y_top          # from-top → canvas y
+def _c(y_top): return H - y_top
 
 def _sc(s):
     if s >= 7.5: return C_HIGH
@@ -63,7 +65,7 @@ def _sc(s):
     return C_LOW
 
 def _lv(s):
-    if s >= 9.0: return "Высоко"
+    if s >= 9.0: return "Исключительно"
     if s >= 7.5: return "Выше среднего"
     if s >= 5.5: return "Среднее"
     if s >= 4.0: return "Ниже среднего"
@@ -75,7 +77,7 @@ def _tier_label(t):
             "LTN": "Low Tier Normie"}.get(t, t)
 
 def _top_pct(s):
-    if s >= 9.5: return "1%"; 
+    if s >= 9.5: return "1%"
     if s >= 9.0: return "3%"
     if s >= 8.5: return "7%"
     if s >= 8.0: return "15%"
@@ -97,9 +99,8 @@ def _level_str(s):
 
 def _para(c, text, x, y_top, w, h,
           font=None, size=10, color=None, align=TA_LEFT, leading=None):
-    """Параграф с переносом через Frame+Paragraph."""
     font = font or R
-    color = color or BLACK
+    color = color or WHITE_TXT
     leading = leading or round(size * 1.45)
     st = ParagraphStyle("p", fontName=font, fontSize=size, textColor=color,
                         leading=leading, alignment=align,
@@ -130,7 +131,7 @@ def _rect(c, x, y_top, w, h, fill=None, stroke=None, lw=0.5):
 
 def _txt(c, text, x, y_top, font=None, size=10, color=None, align="left"):
     font = font or R
-    color = color or BLACK
+    color = color or WHITE_TXT
     c.saveState()
     c.setFont(font, size)
     c.setFillColor(color)
@@ -152,12 +153,138 @@ def _footer(c, page_num, total, extra=""):
 
 
 def _header(c, title_extra=""):
-    """Шапка страницы: логотип + handle."""
-    _txt(c, BOT, W / 2, MT + 5*mm, font=B, size=16, color=BLACK, align="center")
+    _rect(c, 0, 0, W, MT + 13*mm, fill=SURFACE)
+    _txt(c, BOT, W / 2, MT + 5*mm, font=B, size=16, color=WHITE_TXT, align="center")
     sub = f"Telegram: {HANDLE}"
     if title_extra: sub = title_extra
     _txt(c, sub, W / 2, MT + 9.5*mm, font=R, size=9, color=DIM, align="center")
-    _hline(c, ML, MT + 12*mm, BW, color=LINE, lw=0.7)
+    _hline(c, 0, MT + 13*mm, W, color=LINE, lw=0.7)
+
+
+def _draw_photo(c, image_bytes, x, y_top, max_w, max_h, circle=False):
+    """Вставить фото в PDF."""
+    if not image_bytes:
+        return 0
+    try:
+        from reportlab.platypus import Image as RLImage
+        pil = PILImage.open(io.BytesIO(image_bytes))
+        iw, ih = pil.size
+        scale = min(max_w / iw, max_h / ih)
+        pw, ph = iw * scale, ih * scale
+        px = x + (max_w - pw) / 2
+        img = RLImage(io.BytesIO(image_bytes), width=pw, height=ph)
+        img.drawOn(c, px, _c(y_top + ph))
+        return ph
+    except Exception:
+        return 0
+
+
+def _draw_radar(c, cx, cy, radius, scores, labels):
+    """
+    Рисует радарную диаграмму (паутина) прямо на canvas.
+    cx, cy — центр в pt (canvas coords, y снизу).
+    scores — список float 0–10.
+    labels — список строк.
+    """
+    n = len(scores)
+    if n < 3:
+        return
+    c.saveState()
+    angles = [math.pi / 2 + 2 * math.pi * i / n for i in range(n)]
+
+    # Сетка
+    for ring in [0.25, 0.5, 0.75, 1.0]:
+        pts = [(cx + radius * ring * math.cos(a),
+                cy + radius * ring * math.sin(a)) for a in angles]
+        c.setStrokeColor(LINE)
+        c.setLineWidth(0.4)
+        p = c.beginPath()
+        p.moveTo(*pts[0])
+        for pt in pts[1:]:
+            p.lineTo(*pt)
+        p.close()
+        c.drawPath(p)
+
+    # Спицы
+    for a in angles:
+        c.setStrokeColor(LINE)
+        c.setLineWidth(0.4)
+        c.line(cx, cy, cx + radius * math.cos(a), cy + radius * math.sin(a))
+
+    # Данные
+    data_pts = [(cx + radius * (s / 10) * math.cos(a),
+                 cy + radius * (s / 10) * math.sin(a))
+                for s, a in zip(scores, angles)]
+    c.setFillColor(colors.HexColor("#4A6CF730"))
+    c.setStrokeColor(INFL_BD)
+    c.setLineWidth(1.5)
+    p = c.beginPath()
+    p.moveTo(*data_pts[0])
+    for pt in data_pts[1:]:
+        p.lineTo(*pt)
+    p.close()
+    c.drawPath(p, fill=1, stroke=1)
+
+    # Точки
+    c.setFillColor(INFL_BD)
+    for pt in data_pts:
+        c.circle(pt[0], pt[1], 3, fill=1, stroke=0)
+
+    # Подписи
+    c.setFont(R, 6.5)
+    c.setFillColor(DIM)
+    for i, (a, lbl) in enumerate(zip(angles, labels)):
+        lx = cx + (radius + 12) * math.cos(a)
+        ly = cy + (radius + 12) * math.sin(a)
+        c.drawCentredString(lx, ly - 3, lbl)
+
+    c.restoreState()
+
+
+def _draw_bell(c, x, y_bottom, w, h, score):
+    """
+    Рисует упрощённую колоколообразную кривую нормального распределения
+    и отмечает на ней позицию score.
+    """
+    c.saveState()
+    # Фон
+    _rect(c, x, y_bottom - h, w, h, fill=SURFACE)
+
+    steps = 60
+    pts = []
+    for i in range(steps + 1):
+        t = i / steps  # 0..1 → score 0..10
+        z = (t * 10 - 5) / 1.8
+        gauss = math.exp(-0.5 * z * z)
+        px_i = x + t * w
+        py_i = y_bottom - 4 - gauss * (h - 10)
+        pts.append((px_i, _c(py_i)))
+
+    c.setStrokeColor(DIM)
+    c.setLineWidth(0.8)
+    p = c.beginPath()
+    p.moveTo(*pts[0])
+    for pt in pts[1:]:
+        p.lineTo(*pt)
+    c.drawPath(p)
+
+    # Позиция игрока
+    marker_x = x + (score / 10) * w
+    c.setStrokeColor(_sc(score))
+    c.setLineWidth(1.5)
+    c.line(marker_x, _c(y_bottom - h + 4), marker_x, _c(y_bottom - 3))
+    c.setFillColor(_sc(score))
+    c.setFont(B, 7)
+    c.drawCentredString(marker_x, _c(y_bottom - h + 2), f"{score:.1f}")
+
+    # Ярлыки 1/5/10
+    c.setFont(R, 6)
+    c.setFillColor(DIM)
+    c.drawCentredString(x + 4,          _c(y_bottom - 1), "1")
+    c.drawCentredString(x + w / 2,      _c(y_bottom - 1), "5")
+    c.drawCentredString(x + w - 4,      _c(y_bottom - 1), "10")
+
+    c.restoreState()
 
 
 # ── Данные метрик ─────────────────────────────────────────────────────────────
@@ -184,7 +311,6 @@ FARKAS_NORMS = {
     "brow_height":      ("Высота бровей",             0.063,  "brow_dist_ratio"),
 }
 
-# Порядок 20 метрик: (score_field, meta_key, description_text, what_text, influence_text)
 METRICS_20 = [
     ("symmetry_score",        "symmetry",
      "Метрика оценивает, насколько зеркально совпадают левая и правая стороны лица по "
@@ -341,7 +467,7 @@ METRICS_20 = [
 
     ("brow_height_score",     "brow_height",
      "Метрика оценивает расстояние между бровью и верхним веком относительно высоты лица. "
-     "Норма около 0.063 означает оптимальный зазор, при котором брови выглядят "
+     "Норма Фаркаса — около 0.063. Правильная высота бровей создаёт гармонию, брови "
      "естественно и гармонично дополняют зону глаз.",
      "Расстояние бровь–глаз / высота лица",
      "Правильная высота бровей обрамляет глаза и акцентирует взгляд. "
@@ -383,112 +509,138 @@ BRIEF_GRID = [
     ("brow_height_score",     "Высота бровей"),
 ]
 
-# Советы по слабым метрикам
+# Советы по слабым метрикам (обновлённые — мужской уклон)
 METRIC_ADVICE = {
     "symmetry_score":
-        "Жуй равномерно с обеих сторон. Сон на спине помогает сохранять симметрию. "
-        "Проверь прикус у ортодонта — это главная причина лицевой асимметрии. "
-        "Избегай постоянного упора щекой в руку.",
+        "Жуй с обеих сторон поровну. Брекеты / ретейнер исправляют прикус — главную причину "
+        "асимметрии. Спи на спине. Исключи постоянный упор щеки в руку. "
+        "Регулярные упражнения мьюинга выравнивают давление на скуловую кость.",
     "face_proportions_score":
-        "Причёска корректирует форму: высокий объём на макушке визуально удлиняет лицо, "
-        "объём по бокам — расширяет. Подбери фасон под желаемые пропорции.",
+        "Причёска корректирует форму: высокий объём вверху визуально удлиняет лицо, "
+        "объём по бокам расширяет. Подбери фасон под целевые пропорции. "
+        "Снижение % жира до 10–13% делает контуры чётче и лицо визуально уже.",
     "vertical_balance_score":
-        "Коррекция трёх третей — задача стилиста. Чёлка балансирует верхнюю треть. "
-        "Борода удлиняет или укорачивает нижнюю треть. Работа с мьюингом со временем меняет структуру.",
+        "Коррекция — задача стилиста и парикмахера. Чёлка укорачивает верхнюю треть. "
+        "Короткая борода или щетина подчёркивает нижнюю треть. "
+        "Мьюинг со временем смещает структуры лица. Работай системно — эффект через 6–18 мес.",
     "cheekbones_score":
-        "Снизь % жира в теле ниже 14% — скулы проявятся. Мьюинг стимулирует рост скул. "
-        "Стрижки с выбритыми висками подчёркивают скуловой контур. Жвачка Falim ежедневно.",
+        "Снижай % жира в теле ниже 13% — скулы проявятся автоматически. "
+        "Мьюинг: язык в нёбо — стимулирует рост скулового выступа. "
+        "Жвачка Falim ежедневно по 20 минут нагружает жевательные мышцы. "
+        "Подстриженные виски визуально подчёркивают скуловой рельеф.",
     "eyes_score":
-        "Убери отёки под глазами: ледяной компресс или нефритовый роллер утром. "
-        "Ограничь соль и алкоголь. Сон 8 часов. Ретинол 0.025% снижает пигментацию вокруг глаз.",
+        "Убирай отёки: ледяной компресс 5 мин утром или нефритовый роллер от носа к вискам. "
+        "Ограничь соль, алкоголь, сахар — главные причины отёчности лица. "
+        "Сон 8 ч. Ретинол 0.025% снижает пигментацию вокруг глаз. "
+        "Дренажный массаж нижнего века убирает постоянную припухлость.",
     "eye_distance_score":
-        "Близкая постановка глаз корректируется причёской с объёмом по бокам и применением "
-        "светлых акцентов на внешних уголках. Далёкая — тёмные акценты на внутренних углах.",
+        "Близкая постановка: объём по бокам причёски, светлые акценты у внешних углов бровей. "
+        "Далёкая постановка: чёрные акценты у внутренних углов, высокая переносица в кадре. "
+        "Форма и заполненность бровей визуально меняет воспринимаемое расстояние.",
     "canthal_tilt_score":
-        "Убери отёки нижнего века (сон, вода, меньше соли). Мьюинг поднимает середину лица. "
-        "Ледяной роллер по утрам по направлению от носа к вискам.",
+        "Убери отёки нижнего века (ледяной роллер, сон, отказ от соли). "
+        "Мьюинг поднимает среднюю зону лица — натягивает кожу под глазом вверх. "
+        "Гримасы «hunter eyes» (лёгкое прищуривание без сморщивания лба) тренируют мышцу. "
+        "Гречаная подушка-валик снижает отёки во сне.",
     "nose_score":
-        "Объём на висках визуально уменьшает нос. Стрижка с широкой верхней частью сужает "
-        "восприятие носа. Умеренный контуринг носа работает даже у мужчин.",
+        "Объём на висках визуально уменьшает нос относительно лица. "
+        "Стрижка с широкой верхней частью (андеркат, fade) сужает восприятие центральной зоны. "
+        "Умеренный конторинг носа (минималистичный хайлайт по спинке) доступен каждому мужчине.",
     "lips_score":
-        "Гидратация делает губы визуально более полными. Скраб для губ раз в неделю. "
-        "Увлажняющий бальзам ежедневно. Яркий контур рта подчёркивает правильные пропорции.",
+        "Постоянное увлажнение бальзамом делает губы визуально полнее. "
+        "Нежный скраб из сахара + кокосового масла раз в неделю. "
+        "Отказ от курения и алкоголя: цвет губ восстанавливается через 2–4 недели.",
     "nose_length_score":
-        "Длинный нос корректируется акцентом на лбу (причёска с объёмом вверх). "
-        "Короткий нос — акцент на нижней трети (борода, визуальный вес внизу).",
+        "Длинный нос: объём причёски вверху, высокая причёска переводит акцент на верхнюю треть. "
+        "Короткий нос: тёмный цвет бороды и наращивание нижней трети.",
     "chin_length_score":
-        "Борода на подбородке (goatee) визуально удлиняет нижнюю треть. "
-        "Мьюинг и правильное положение языка со временем выдвигают подбородок вперёд.",
+        "Борода на подбородке (goatee) + короткие виски визуально удлиняет нижнюю треть. "
+        "Мьюинг и правильное положение языка со временем выдвигают подбородок вперёд. "
+        "Снижение % жира делает подбородок визуально более выраженным.",
     "chin_contour_score":
-        "Снизь % жира — чёткость подбородочного контура улучшится. Мьюинг помогает. "
-        "Стрижка с чёткими краями акцентирует контур.",
+        "Снизь % жира — чёткость подбородочного контура улучшится первой. "
+        "Мьюинг и жвачка Falim укрепляют подбородочную область. "
+        "Чёткие края стрижки и виски создают оптический контраст с контуром.",
     "nose_to_mouth_score":
-        "Баланс носа и рта — задача стилиста. Визуально можно скорректировать "
-        "контуром губ (подчеркнуть или смягчить) и работой с объёмом причёски.",
+        "Баланс носа и рта визуально корректируется работой с бровями: "
+        "пышные брови уводят акцент вверх от носа. "
+        "Небольшая борода под нижней губой смещает восприятие центра вниз.",
     "biocular_score":
-        "Биокулярная ширина — костная характеристика. Визуально корректируется "
-        "причёской с объёмом у висков и бровями правильной формы.",
+        "Биокулярная ширина — костная характеристика. "
+        "Корректируется правильной формой бровей (удлинение в стороны) и "
+        "объёмом причёски у висков — создаёт зрительно более широкий взгляд.",
     "forehead_score":
-        "Широкий лоб балансируется объёмом по бокам и чёлкой. "
-        "Узкий лоб — акцент на объёме у висков и широкой верхней части причёски.",
+        "Широкий лоб балансируется плавной чёлкой или низкой причёской. "
+        "Узкий лоб — объём у висков и отсутствие чёлки. "
+        "Правильная линия роста волос (не бритая высоко) создаёт оптимальный силуэт.",
     "lip_fullness_score":
-        "Гидратация делает губы полнее. Бальзам + лёгкое растирание кубиком льда. "
-        "Нежный скраб раз в неделю. Правильный цвет одежды выделяет зону рта.",
+        "Ежедневное увлажнение + нежный скраб один раз в неделю. "
+        "Ледяной кубик по губам усиливает кровообращение — временно полнит. "
+        "Отказ от курения: через 30 дней объём и цвет губ заметно восстанавливаются.",
     "lip_ratio_score":
-        "Пропорции губ — одна из наименее поддающихся коррекции метрик. "
-        "Увлажняй губы ежедневно. При желании — контурирование помадой корректирует визуальный баланс.",
+        "Пропорции губ — одна из наименее поддающихся коррекции метрик без процедур. "
+        "Увлажняй губы ежедневно. Тонкие усы под носом визуально изменяют воспринимаемый размер верхней губы.",
     "jaw_to_mouth_score":
-        "Широкий рот визуально сужается тёмными оттенками в уголках. "
-        "Узкий рот — светлые центральные акценты. Чёткость челюсти улучшается снижением % жира.",
+        "Чёткость линии челюсти улучшается при снижении % жира и правильном прикусе. "
+        "Мьюинг укрепляет жевательную мышцу — добавляет ширину внизу. "
+        "Жвачка Falim 20 минут ежедневно — долгосрочный инструмент.",
     "eye_shape_score":
-        "Форма глаза — костная характеристика. Горизонтально вытянутые глаза "
-        "воспринимаются как более хищные. Убери отёчность верхнего века для более чёткого разреза.",
+        "Горизонтально вытянутые глаза воспринимаются как более хищные — это плюс. "
+        "Убери отёчность верхнего века для более чёткого разреза: ледяной компресс утром, "
+        "антигистамины при аллергии, ретинол при пигментации.",
     "brow_height_score":
-        "Правильная форма и высота бровей — один из самых доступных инструментов. "
+        "Форма и высота бровей — самый доступный инструмент без процедур. "
         "Брови должны начинаться над внутренним углом глаза и заканчиваться у внешнего. "
-        "Правильная дуга поднимает взгляд визуально.",
+        "Правильная дуга поднимает взгляд визуально. Не выщипывай снизу — снижает брови.",
 }
 
 
-# ╔══════════════════════════════════════════════════════════════════════════════╗
-# ║  КРАТКИЙ РАЗБОР  (2 страницы)                                               ║
-# ╚══════════════════════════════════════════════════════════════════════════════╝
+# ─────────────────────────────────────────────────────────────────────────────
+# КРАТКИЙ РАЗБОР  (2 страницы)
+# ─────────────────────────────────────────────────────────────────────────────
 
 def generate_brief_pdf(metrics: FaceMetrics, name: str = "") -> bytes:
     buf = io.BytesIO()
     c = pdfgen_canvas.Canvas(buf, pagesize=A4)
 
     # ── Страница 1 ────────────────────────────────────────────────────────────
-    _rect(c, 0, 0, W, H, fill=WHITE)
+    _rect(c, 0, 0, W, H, fill=BG)
     _header(c)
 
     y = MT + 16*mm
-    _para(c,
-          "Краткий математический разбор геометрии твоего лица.",
-          ML, y, BW, 14, font=R, size=11, color=GRAY, align=TA_CENTER)
+
+    # ── Фото (если есть landmark_image) ──────────────────────────────────────
+    photo_h_used = 0
+    if metrics.landmark_image:
+        ph = _draw_photo(c, metrics.landmark_image, ML, y, BW, 72*mm)
+        if ph:
+            # Рамка вокруг фото
+            _rect(c, ML + (BW - min(BW, ph * BW / 72*mm)) / 2 - 1, y - 1,
+                  min(BW, BW) + 2, ph + 2, stroke=LINE, lw=0.8)
+            photo_h_used = ph + 4*mm
+
+    y += photo_h_used
 
     # Большой балл
-    y += 14
     score_col = _sc(metrics.overall_score)
-    _txt(c, f"{metrics.overall_score:.2f}", W / 2 - 14*mm, y + 28*mm,
-         font=B, size=38, color=score_col, align="right")
-    _txt(c, "из 10", W / 2 - 11*mm, y + 28*mm, font=R, size=13, color=DIM, align="left")
+    _txt(c, f"{metrics.overall_score:.2f}", W / 2 - 14*mm, y + 14*mm,
+         font=B, size=36, color=score_col, align="right")
+    _txt(c, "из 10", W / 2 - 11*mm, y + 14*mm, font=R, size=13, color=DIM, align="left")
 
-    # Тир
     tier_str = f"{metrics.tier}  ·  {_tier_label(metrics.tier)}"
-    y += 36*mm
-    _txt(c, tier_str, W / 2, y, font=B, size=11, color=BLACK, align="center")
+    y += 20*mm
+    _txt(c, tier_str, W / 2, y, font=B, size=10, color=WHITE_TXT, align="center")
     y += 5*mm
     top = _top_pct(metrics.overall_score)
-    _txt(c, f"Ты в топ {top} по геометрии лица!", W / 2, y, font=R, size=10, color=GRAY, align="center")
+    _txt(c, f"Ты в топ {top} по геометрии лица", W / 2, y, font=R, size=9, color=DIM, align="center")
     y += 5*mm
     _hline(c, ML, y, BW)
 
     # 3×3 сетка
-    y += 5*mm
+    y += 4*mm
     card_w = (BW - 2 * 4*mm) / 3
-    card_h = 42*mm
-    row_gap = 4*mm
+    card_h = 36*mm
+    row_gap = 3*mm
 
     for row in range(3):
         for col in range(3):
@@ -501,82 +653,81 @@ def generate_brief_pdf(metrics: FaceMetrics, name: str = "") -> bytes:
             cx = ML + col * (card_w + 4*mm)
             cy = y + row * (card_h + row_gap)
 
-            # Карточка фон
-            _rect(c, cx, cy, card_w, card_h, fill=LGRAY, stroke=LINE, lw=0.5)
+            _rect(c, cx, cy, card_w, card_h, fill=CARD, stroke=LINE, lw=0.5)
 
-            # Заголовок карточки
-            _para(c, label, cx + 3, cy + 5, card_w - 6, 11,
-                  font=R, size=9, color=GRAY, align=TA_CENTER)
+            _para(c, label, cx + 3, cy + 4, card_w - 6, 10,
+                  font=R, size=8, color=DIM, align=TA_CENTER)
 
-            # Визуальный бар (тонкая полоска под заголовком)
             bar_w = (card_w - 10) * score / 10
-            _rect(c, cx + 5, cy + 17, card_w - 10, 3, fill=LINE)
-            _rect(c, cx + 5, cy + 17, bar_w, 3, fill=sc_col)
+            _rect(c, cx + 5, cy + 15, card_w - 10, 3, fill=SURFACE)
+            _rect(c, cx + 5, cy + 15, bar_w, 3, fill=sc_col)
 
-            # Большой балл
-            _txt(c, f"{score:.2f}", cx + card_w / 2, cy + 25*mm,
-                 font=B, size=22, color=sc_col, align="center")
-
-            # Уровень
-            _txt(c, lv, cx + card_w / 2, cy + 30*mm,
-                 font=R, size=8, color=sc_col, align="center")
+            _txt(c, f"{score:.2f}", cx + card_w / 2, cy + 23*mm,
+                 font=B, size=20, color=sc_col, align="center")
+            _txt(c, lv, cx + card_w / 2, cy + 28*mm,
+                 font=R, size=7.5, color=sc_col, align="center")
 
     _footer(c, 1, 2)
     c.showPage()
 
-    # ── Страница 2 ────────────────────────────────────────────────────────────
-    _rect(c, 0, 0, W, H, fill=WHITE)
+    # ── Страница 2 — Апселл ───────────────────────────────────────────────────
+    _rect(c, 0, 0, W, H, fill=BG)
     _header(c)
 
     y = MT + 16*mm
-    _txt(c, "Краткий разбор — только верхушка.", ML, y, font=B, size=14, color=BLACK)
-    y += 7*mm
+    _txt(c, "Это — только верхушка айсберга.", ML, y, font=B, size=14, color=WHITE_TXT)
+    y += 8*mm
     _para(c,
-          "Этот краткий разбор — лишь небольшая часть полноценного анализа лица.",
-          ML, y, BW, 12, font=R, size=11, color=GRAY)
-    y += 12*mm
-    _para(c,
-          "Здесь ты видишь только базовые оценки основных параметров. В полном разборе ты получишь "
-          "уже полноценный файл на 25 страниц:",
-          ML, y, BW, 22, font=R, size=10, color=BLACK)
-    y += 24*mm
+          "Краткий разбор показывает лишь 9 из 20 метрик твоего лица и не даёт понять: "
+          "что именно мешает твоей внешности и как это исправить.",
+          ML, y, BW, 20, font=R, size=10.5, color=DIM)
+    y += 22*mm
 
-    bullets = [
-        ("Раскрытие всех оценок: чего не хватает и что нужно улучшать. "
-         "Ты сможешь понять, какие особенности делают твоё лицо более гармоничным, "
-         "а какие визуально снижают привлекательность и могут мешать восприниматься "
-         "более уверенно, статусно и эстетично."),
-        ("Подробная оценка общей гармоничности и твоей объективной привлекательности "
-         "с подробным описанием."),
-        ("Общая статистика из 20 зон лица, по которой ты поймёшь свои сильные и слабые стороны."),
-        ("3 страницы конкретных рекомендаций, которые помогут тебе полностью раскрыть свой "
-         "потенциал и достичь максимальной красоты."),
+    _hline(c, ML, y, BW, color=LINE)
+    y += 6*mm
+    _txt(c, "Полный разбор (25 страниц) включает:", ML, y, font=B, size=11, color=GOLD)
+    y += 8*mm
+
+    full_bullets = [
+        ("Все 20 метрик с подробным разбором",
+         "Для каждой зоны лица — твой точный показатель, норма Фаркаса, "
+         "детальное описание и как эта метрика влияет на восприятие тебя окружающими."),
+        ("Конкретные способы улучшить внешность",
+         "Свыше 40 персонализированных рекомендаций: мьюинг, уход за кожей, причёска, "
+         "борода, питание, сон, контуринг скул, упражнения и многое другое — "
+         "всё конкретно под твои слабые метрики."),
+        ("Стиль и уход: практические шаги",
+         "Подборка реальных методик (брови, скраб, SPF, ретинол, жвачка Falim, "
+         "ледяные компрессы) с пояснением, когда ожидать результат."),
+        ("Диаграммы и графики",
+         "Радарный профиль твоих 20 метрик, позиция на кривой нормального распределения, "
+         "таблица сравнения твоих показателей с нормой Фаркаса."),
     ]
-    for bullet in bullets:
-        _para(c, f"   •   {bullet}", ML, y, BW, 28, font=R, size=10, color=BLACK, align=TA_JUSTIFY)
-        y += 30*mm
 
-    y += 5*mm
-    _hline(c, ML, y, BW)
-    y += 7*mm
+    for btitle, btext in full_bullets:
+        _rect(c, ML, y, BW, 6*mm, fill=PANEL)
+        _rect(c, ML, y, 3, 6*mm, fill=INFL_BD)
+        _txt(c, btitle, ML + 7, y + 4*mm, font=B, size=9.5, color=WHITE_TXT)
+        y += 8*mm
+        _para(c, btext, ML + 4, y, BW - 8, 20,
+              font=R, size=9.5, color=DIM, align=TA_JUSTIFY)
+        y += 22*mm
+
+    y += 2*mm
+    _hline(c, ML, y, BW, color=LINE)
+    y += 8*mm
 
     _para(c,
-          "Ты видишь своё лицо каждый день, и твой глаз уже давно замылился.",
-          ML, y, BW, 12, font=B, size=11, color=BLACK)
-    y += 13*mm
-    _para(c,
-          "Именно поэтому многие люди годами не понимают, что конкретно портит их внешность и "
-          "почему они воспринимаются слабее, менее привлекательно или менее статусно, чем могли бы.\n\n"
-          "Полный разбор позволяет посмотреть на своё лицо со стороны — через объективную геометрию, "
-          "пропорции и реальные параметры, а далее — приступить к улучшению.",
-          ML, y, BW, 50, font=R, size=10, color=BLACK, align=TA_JUSTIFY)
-    y += 55*mm
+          "Ты смотришь на своё лицо каждый день — и именно поэтому не видишь, "
+          "что именно снижает твою привлекательность. Полный разбор — это объективный взгляд "
+          "со стороны, который даст тебе конкретный план действий.",
+          ML, y, BW, 30, font=R, size=10, color=DIM, align=TA_JUSTIFY)
+    y += 33*mm
 
-    # Кнопка-блок
-    btn_h = 12*mm
-    _rect(c, ML, y, BW, btn_h, fill=BLACK)
-    _txt(c, "Получить полный разбор  →",
-         W / 2, y + btn_h / 2 + 1.5*mm, font=B, size=12, color=WHITE, align="center")
+    btn_h = 13*mm
+    _rect(c, ML, y, BW, btn_h, fill=INFL_BD)
+    _txt(c, "Купить полный разбор — 50 Stars  →",
+         W / 2, y + btn_h / 2 + 2*mm, font=B, size=12, color=WHITE_TXT, align="center")
 
     _footer(c, 2, 2)
     c.showPage()
@@ -584,68 +735,58 @@ def generate_brief_pdf(metrics: FaceMetrics, name: str = "") -> bytes:
     return buf.getvalue()
 
 
-# ╔══════════════════════════════════════════════════════════════════════════════╗
-# ║  ПОЛНЫЙ РАЗБОР  (25 страниц)                                                ║
-# ╚══════════════════════════════════════════════════════════════════════════════╝
+# ─────────────────────────────────────────────────────────────────────────────
+# ПОЛНЫЙ РАЗБОР  (25 страниц)
+# ─────────────────────────────────────────────────────────────────────────────
 
 def _get_score(metrics, field):
     return getattr(metrics, field, 5.0)
 
 
 def _get_raw(metrics, detail_key):
-    """Получить сырое значение из details по ключу."""
     if detail_key is None:
         return None
     return metrics.details.get(detail_key)
 
 
 def _draw_score_bar(c, x, y_top, w, h, score):
-    """Горизонтальный бар оценки с отметкой нормы (5.0)."""
-    bar_h = 6
+    bar_h = 7
     bar_y = y_top + h / 2 - bar_h / 2
-    _rect(c, x, bar_y, w, bar_h, fill=LINE)
+    _rect(c, x, bar_y, w, bar_h, fill=PANEL)
     fill_w = w * score / 10
     _rect(c, x, bar_y, fill_w, bar_h, fill=_sc(score))
-    # Отметка нормы (5.0)
     norm_x = x + w * 0.5
     c.saveState()
     c.setStrokeColor(DIM)
     c.setLineWidth(1)
     c.line(norm_x, _c(bar_y - 2), norm_x, _c(bar_y + bar_h + 2))
     c.restoreState()
-    _txt(c, f"{score:.2f}/10", x + w / 2, bar_y - 6, font=B, size=11,
+    _txt(c, f"{score:.2f}/10", x + w / 2, bar_y - 6, font=B, size=12,
          color=_sc(score), align="center")
 
 
 def _full_cover(c, metrics):
     """Страница 1 — обложка с фото."""
-    _rect(c, 0, 0, W, H, fill=WHITE)
+    _rect(c, 0, 0, W, H, fill=BG)
     _header(c)
 
     y = MT + 16*mm
-    _para(c,
-          "Полный математический разбор геометрии твоего лица.",
-          ML, y, BW, 14, font=R, size=11, color=GRAY, align=TA_CENTER)
-    y += 13
-    _txt(c, "Открыть бота  →", W / 2, y + 8*mm, font=R, size=9, color=INFL_BD, align="center")
-    y += 14*mm
+    _para(c, "Полный математический разбор геометрии твоего лица.",
+          ML, y, BW, 14, font=R, size=11, color=DIM, align=TA_CENTER)
+    y += 14
 
     # Фото
-    photo_h = 90*mm
+    photo_h = 100*mm
     if metrics.landmark_image:
-        try:
-            pil = PILImage.open(io.BytesIO(metrics.landmark_image))
-            iw, ih = pil.size
-            scale = min(BW / iw, photo_h / ih)
-            pw, ph = iw * scale, ih * scale
-            px = ML + (BW - pw) / 2
-            from reportlab.platypus import Image as RLImage
-            img = RLImage(io.BytesIO(metrics.landmark_image), width=pw, height=ph)
-            img.drawOn(c, px, _c(y + ph))
-        except Exception:
-            pass
-
-    y += photo_h + 5*mm
+        ph = _draw_photo(c, metrics.landmark_image, ML, y, BW, photo_h)
+        if ph:
+            _rect(c, ML + (BW - ph * (BW / photo_h)) / 2 - 1, y - 1,
+                  ph * (BW / photo_h) + 2, ph + 2, stroke=INFL_BD, lw=1.2)
+            y += ph + 5*mm
+        else:
+            y += photo_h + 5*mm
+    else:
+        y += photo_h + 5*mm
 
     # Балл
     score_col = _sc(metrics.overall_score)
@@ -656,35 +797,31 @@ def _full_cover(c, metrics):
 
     top = _top_pct(metrics.overall_score)
     _para(c, f"Ты входишь в топ {top} людей по геометрии лица!",
-          ML, y, BW, 14, font=B, size=13, color=BLACK, align=TA_CENTER)
+          ML, y, BW, 14, font=B, size=13, color=WHITE_TXT, align=TA_CENTER)
     y += 15*mm
 
     _txt(c, f"Уровень: {_level_str(metrics.overall_score)}", W / 2, y,
-         font=R, size=10, color=GRAY, align="center")
-    y += 6*mm
+         font=R, size=10, color=DIM, align="center")
+    y += 7*mm
 
-    # Топ-3 сильных
     all_scores = [(f, getattr(metrics, f, 5.0)) for f, _, __ in METRIC_ORDER_FULL]
     sorted_asc = sorted(all_scores, key=lambda x: x[1])
-    weak_3 = sorted_asc[:3]
     strong_3 = sorted_asc[-3:][::-1]
-
     name_map = {f: n for f, n, _ in METRIC_ORDER_FULL}
     strong_str = ", ".join(name_map[f].lower() for f, _ in strong_3)
     _txt(c, f"Сильные стороны: {strong_str}", W / 2, y,
-         font=R, size=9, color=GRAY, align="center")
+         font=R, size=9, color=DIM, align="center")
 
     _footer(c, 1, 25)
 
 
 def _full_overview(c, metrics):
-    """Страница 2 — сводный обзор."""
-    _rect(c, 0, 0, W, H, fill=WHITE)
+    """Страница 2 — сводный обзор с радарной диаграммой."""
+    _rect(c, 0, 0, W, H, fill=BG)
     _header(c)
 
     y = MT + 14*mm
 
-    # Балл
     score_col = _sc(metrics.overall_score)
     _txt(c, f"{metrics.overall_score:.2f}", W / 2 - 14*mm, y + 12*mm,
          font=B, size=34, color=score_col, align="right")
@@ -693,11 +830,11 @@ def _full_overview(c, metrics):
 
     top = _top_pct(metrics.overall_score)
     _para(c, f"Ты входишь в топ {top} людей по геометрии лица!",
-          ML, y, BW, 12, font=B, size=11, color=BLACK, align=TA_CENTER)
+          ML, y, BW, 12, font=B, size=11, color=WHITE_TXT, align=TA_CENTER)
     y += 13*mm
 
     _txt(c, f"Уровень: {_level_str(metrics.overall_score)}", W / 2, y,
-         font=R, size=10, color=GRAY, align="center")
+         font=R, size=10, color=DIM, align="center")
     y += 6*mm
 
     all_scores = [(f, getattr(metrics, f, 5.0)) for f, _, __ in METRIC_ORDER_FULL]
@@ -705,61 +842,48 @@ def _full_overview(c, metrics):
     weak_3 = sorted_asc[:3]
     strong_3 = sorted_asc[-3:][::-1]
     name_map = {f: n for f, n, _ in METRIC_ORDER_FULL}
+
     strong_str = ", ".join(name_map[f].lower() for f, _ in strong_3)
-    _txt(c, f"Сильные стороны: {strong_str}", W / 2, y, font=R, size=9, color=GRAY, align="center")
+    _txt(c, f"Сильные стороны: {strong_str}", W / 2, y, font=R, size=9, color=DIM, align="center")
     y += 7*mm
     _hline(c, ML, y, BW)
     y += 5*mm
 
-    # ОБЩЕЕ ВПЕЧАТЛЕНИЕ
-    _txt(c, "ОБЩЕЕ ВПЕЧАТЛЕНИЕ", ML, y, font=B, size=10, color=BLACK)
-    y += 6*mm
+    # ── Радарная диаграмма ────────────────────────────────────────────────────
+    radar_labels = ["Симметрия", "Пропорции", "Баланс", "Скулы", "Глаза",
+                    "Расст.глаз", "Тильт", "Нос", "Губы", "Нос(длина)"]
+    radar_fields = ["symmetry_score", "face_proportions_score", "vertical_balance_score",
+                    "cheekbones_score", "eyes_score", "eye_distance_score",
+                    "canthal_tilt_score", "nose_score", "lips_score", "nose_length_score"]
+    radar_scores = [_get_score(metrics, f) for f in radar_fields]
 
-    # Генерируем текст впечатления
-    strong_names = [name_map[f].lower() for f, _ in strong_3]
-    weak_names = [name_map[f].lower() for f, _ in weak_3]
-    impression = (
-        f"Лицо с {_level_str(metrics.overall_score).lower()} геометрией. "
-        f"Ключевые сильные стороны — {', '.join(strong_names)} — "
-        f"формируют выразительный, запоминающийся образ. "
-        f"Зоны потенциала — {', '.join(weak_names)} — при грамотной работе могут "
-        f"существенно усилить общее впечатление."
-    )
-    _para(c, impression, ML, y, BW, 28, font=R, size=9.5, color=BLACK, align=TA_JUSTIFY)
-    y += 30*mm
+    radar_cx = ML + 58*mm
+    radar_cy = _c(y + 42*mm)
+    _draw_radar(c, radar_cx, radar_cy, 38*mm, radar_scores, radar_labels)
 
-    # Профиль метрик (мини-бары)
-    _txt(c, "Профиль метрик", ML, y, font=B, size=10, color=BLACK)
-    y += 7*mm
+    # Легенда рядом с радаром
+    legend_x = ML + 120*mm
+    legend_y = y + 8*mm
+    _txt(c, "Профиль метрик", legend_x, legend_y, font=B, size=9, color=WHITE_TXT)
+    legend_y += 6*mm
+    for field, name, num in METRIC_ORDER_FULL[:10]:
+        sc = _get_score(metrics, field)
+        bar_w_full = 60*mm
+        _rect(c, legend_x, legend_y, bar_w_full, 3.5, fill=PANEL)
+        _rect(c, legend_x, legend_y, bar_w_full * sc / 10, 3.5, fill=_sc(sc))
+        _txt(c, f"{name[:14]}", legend_x - 1, legend_y + 3.5, font=R, size=6, color=DIM)
+        _txt(c, f"{sc:.1f}", legend_x + bar_w_full + 2, legend_y + 3.5,
+             font=B, size=6.5, color=_sc(sc))
+        legend_y += 5.5*mm
 
-    bar_row_h = 6*mm
-    bar_bar_w = 80*mm
-    bar_lbl_w = 65*mm
-    bar_score_w = 15*mm
-
-    for field, name, num in METRIC_ORDER_FULL:
-        score = _get_score(metrics, field)
-        sc = _sc(score)
-        # label
-        _txt(c, name, ML, y + 3.5, font=R, size=7.5, color=BLACK)
-        # bar background
-        bx = ML + bar_lbl_w
-        _rect(c, bx, y + 1, bar_bar_w, 3.5, fill=LINE)
-        _rect(c, bx, y + 1, bar_bar_w * score / 10, 3.5, fill=sc)
-        # score
-        _txt(c, f"{score:.2f}", bx + bar_bar_w + 3, y + 3.5, font=B, size=7.5, color=sc)
-        y += bar_row_h
-        if y > H - 60*mm:
-            break  # safety
-
-    y += 5*mm
+    y += 86*mm
     _hline(c, ML, y, BW)
     y += 5*mm
 
-    # Топ-3 сильных / зоны потенциала
+    # Топ-3 + слабые
     half = BW / 2 - 3*mm
-    _txt(c, "Топ-3 сильных метрики", ML, y, font=B, size=9, color=BLACK)
-    _txt(c, "Топ-3 зоны потенциала", ML + half + 6*mm, y, font=B, size=9, color=BLACK)
+    _txt(c, "Топ-3 сильных метрики", ML, y, font=B, size=9, color=WHITE_TXT)
+    _txt(c, "Топ-3 зоны потенциала", ML + half + 6*mm, y, font=B, size=9, color=WHITE_TXT)
     y += 6*mm
 
     for i in range(3):
@@ -774,8 +898,24 @@ def _full_overview(c, metrics):
     _hline(c, ML, y, BW)
     y += 5*mm
 
-    # Вклад каждой метрики (2-колоночная таблица)
-    _txt(c, "Вклад каждой метрики", ML, y, font=B, size=10, color=BLACK)
+    # ОБЩЕЕ ВПЕЧАТЛЕНИЕ
+    _txt(c, "ОБЩЕЕ ВПЕЧАТЛЕНИЕ", ML, y, font=B, size=10, color=WHITE_TXT)
+    y += 6*mm
+
+    strong_names = [name_map[f].lower() for f, _ in strong_3]
+    weak_names = [name_map[f].lower() for f, _ in weak_3]
+    impression = (
+        f"Лицо с {_level_str(metrics.overall_score).lower()} геометрией. "
+        f"Ключевые сильные стороны — {', '.join(strong_names)} — "
+        f"формируют выразительный, запоминающийся образ. "
+        f"Зоны потенциала — {', '.join(weak_names)} — при грамотной работе могут "
+        f"существенно усилить общее впечатление."
+    )
+    _para(c, impression, ML, y, BW, 28, font=R, size=9.5, color=DIM, align=TA_JUSTIFY)
+    y += 30*mm
+
+    # Таблица вклада всех 20 метрик
+    _txt(c, "Все 20 метрик", ML, y, font=B, size=10, color=WHITE_TXT)
     y += 7*mm
 
     col_w = BW / 2 - 3*mm
@@ -785,17 +925,14 @@ def _full_overview(c, metrics):
         s1 = _get_score(metrics, f1)
         s2 = _get_score(metrics, f2) if f2 else None
 
-        # Left entry
-        _txt(c, n1, ML, y + 3.5, font=R, size=8.5, color=BLACK)
+        _txt(c, n1, ML, y + 3.5, font=R, size=8, color=DIM)
         _txt(c, f"{s1:.2f}", ML + col_w - 5*mm, y + 3.5, font=B, size=8.5, color=_sc(s1))
 
-        # Right entry
         if f2:
-            _txt(c, n2, ML + col_w + 6*mm, y + 3.5, font=R, size=8.5, color=BLACK)
-            _txt(c, f"{s2:.2f}", ML + 2 * col_w + 3*mm, y + 3.5,
-                 font=B, size=8.5, color=_sc(s2))
+            _txt(c, n2, ML + col_w + 6*mm, y + 3.5, font=R, size=8, color=DIM)
+            _txt(c, f"{s2:.2f}", ML + 2 * col_w + 3*mm, y + 3.5, font=B, size=8.5, color=_sc(s2))
 
-        _hline(c, ML, y + 5*mm, BW, color=colors.HexColor("#F0F0F0"), lw=0.3)
+        _hline(c, ML, y + 5*mm, BW, color=LINE, lw=0.3)
         y += 5.5*mm
 
     _footer(c, 2, 25)
@@ -807,7 +944,6 @@ def _full_metric_page(c, metrics, metric_tuple, m_idx, page_num):
     score = _get_score(metrics, field)
     sc_col = _sc(score)
 
-    # Находим описание
     body_text = what_text = influence_text = ""
     meta_key = None
     for sf, mk, body, what, inf in METRICS_20:
@@ -824,41 +960,42 @@ def _full_metric_page(c, metrics, metric_tuple, m_idx, page_num):
         _, norm_val, detail_key = FARKAS_NORMS[meta_key]
         if detail_key:
             your_val = metrics.details.get(detail_key)
-            if your_val is None:
-                # symmetry special case
-                if field == "symmetry_score":
-                    e = metrics.details.get("eye_symmetry", 0)
-                    ck = metrics.details.get("cheek_symmetry", 0)
-                    m = metrics.details.get("mouth_symmetry", 0)
-                    your_val = round((e + ck + m) / 30, 3)
+            if your_val is None and field == "symmetry_score":
+                e = metrics.details.get("eye_symmetry", 0)
+                ck = metrics.details.get("cheek_symmetry", 0)
+                m = metrics.details.get("mouth_symmetry", 0)
+                your_val = round((e + ck + m) / 30, 3)
 
-    _rect(c, 0, 0, W, H, fill=WHITE)
+    _rect(c, 0, 0, W, H, fill=BG)
 
-    # Заголовок метрики
+    # Шапка метрики
     num_str = f"{num:02d} / 20"
-    _txt(c, name, ML, MT + 6*mm, font=B, size=13, color=BLACK)
+    _rect(c, 0, 0, W, MT + 11*mm, fill=SURFACE)
+    _txt(c, name, ML, MT + 6*mm, font=B, size=13, color=WHITE_TXT)
     _txt(c, num_str, W - MR, MT + 6*mm, font=R, size=10, color=DIM, align="right")
-    _hline(c, ML, MT + 9*mm, BW, lw=0.7)
+    _hline(c, 0, MT + 11*mm, W, lw=0.7)
 
-    y = MT + 13*mm
+    y = MT + 15*mm
 
-    # Левая колонка: визуализация балла
     left_w = 90*mm
     right_w = BW - left_w - 6*mm
     right_x = ML + left_w + 6*mm
 
-    # Бар оценки
+    # Бар оценки слева
     bar_w = left_w - 10*mm
     bar_x = ML + 5*mm
     bar_y_top = y + 8*mm
     _draw_score_bar(c, bar_x, bar_y_top, bar_w, 14*mm, score)
 
-    # Уровень
-    _txt(c, _lv(score), bar_x + bar_w / 2, bar_y_top + 18*mm,
+    _txt(c, _lv(score), bar_x + bar_w / 2, bar_y_top + 20*mm,
          font=R, size=9, color=sc_col, align="center")
 
-    # Правая колонка: информационный блок
-    _rect(c, right_x, y, right_w, 38*mm, fill=SCORE_BG, stroke=LINE, lw=0.5)
+    # Кривая нормального распределения под баром
+    bell_y = bar_y_top + 24*mm
+    _draw_bell(c, bar_x, bell_y + 14*mm, bar_w, 14*mm, score)
+
+    # Правая колонка — информационный блок
+    _rect(c, right_x, y, right_w, 38*mm, fill=SURFACE, stroke=LINE, lw=0.5)
     ry = y + 4*mm
     _txt(c, "Балл метрики", right_x + 4, ry, font=R, size=8, color=DIM)
     ry += 5*mm
@@ -867,21 +1004,21 @@ def _full_metric_page(c, metrics, metric_tuple, m_idx, page_num):
     _txt(c, "ВАШ ПОКАЗАТЕЛЬ", right_x + 4, ry, font=B, size=7, color=DIM)
     ry += 4*mm
     if your_val is not None:
-        _txt(c, str(your_val), right_x + 4, ry, font=R, size=10, color=BLACK)
+        _txt(c, str(your_val), right_x + 4, ry, font=R, size=10, color=WHITE_TXT)
     _para(c, what_text, right_x + 4, ry + 3, right_w - 8, 12,
           font=R, size=7.5, color=DIM)
     ry += 11*mm
-    _txt(c, "НОРМА", right_x + 4, ry, font=B, size=7, color=DIM)
+    _txt(c, "НОРМА (Фаркас)", right_x + 4, ry, font=B, size=7, color=DIM)
     ry += 4*mm
     if norm_val is not None:
-        _txt(c, str(round(norm_val, 3)), right_x + 4, ry, font=R, size=10, color=BLACK)
+        _txt(c, str(round(norm_val, 3)), right_x + 4, ry, font=R, size=10, color=WHITE_TXT)
     else:
-        _txt(c, "—", right_x + 4, ry, font=R, size=10, color=BLACK)
+        _txt(c, "—", right_x + 4, ry, font=R, size=10, color=WHITE_TXT)
 
     # Тело страницы
     y += 43*mm
     _para(c, body_text, ML, y, BW, 45,
-          font=R, size=10, color=BLACK, align=TA_JUSTIFY, leading=15)
+          font=R, size=10, color=DIM, align=TA_JUSTIFY, leading=15)
     y += 47*mm
 
     # Блок влияния
@@ -889,31 +1026,20 @@ def _full_metric_page(c, metrics, metric_tuple, m_idx, page_num):
     _rect(c, ML, y, BW, infl_h, fill=INFL_BG, stroke=INFL_BD, lw=0.8)
     _txt(c, "ВЛИЯНИЕ", ML + 5, y + 5*mm, font=B, size=8, color=INFL_BD)
     _para(c, influence_text, ML + 5, y + 6*mm, BW - 10, infl_h - 7*mm,
-          font=R, size=9.5, color=BLACK, align=TA_JUSTIFY)
+          font=R, size=9.5, color=WHITE_TXT, align=TA_JUSTIFY)
+
+    # Совет по метрике (если есть)
+    y += infl_h + 5*mm
+    advice = METRIC_ADVICE.get(field, "")
+    if advice and y < H - 50*mm:
+        _rect(c, ML, y, BW, 5.5*mm, fill=PANEL)
+        _rect(c, ML, y, 3, 5.5*mm, fill=C_HIGH)
+        _txt(c, "КАК УЛУЧШИТЬ", ML + 7, y + 3.8*mm, font=B, size=8, color=C_HIGH)
+        y += 7.5*mm
+        _para(c, advice, ML, y, BW, 30,
+              font=R, size=9.5, color=DIM, align=TA_JUSTIFY)
 
     _footer(c, page_num, 25)
-
-
-def _full_rec_page(c, title, content_blocks, page_num):
-    """Страница рекомендаций."""
-    _rect(c, 0, 0, W, H, fill=WHITE)
-    _header(c)
-
-    y = MT + 14*mm
-    _txt(c, title, ML, y, font=B, size=14, color=BLACK)
-    _hline(c, ML, y + 4*mm, BW)
-    y += 10*mm
-
-    for block_title, block_text in content_blocks:
-        # Заголовок блока
-        _rect(c, ML, y, BW, 7*mm, fill=LGRAY)
-        _txt(c, block_title, ML + 4, y + 4.5*mm, font=B, size=9.5, color=BLACK)
-        y += 9*mm
-        _para(c, block_text, ML, y, BW, 30,
-              font=R, size=9.5, color=BLACK, align=TA_JUSTIFY)
-        y += 32*mm
-        if y > H - 30*mm:
-            break
 
 
 def generate_full_pdf(metrics: FaceMetrics, name: str = "") -> bytes:
@@ -933,104 +1059,105 @@ def generate_full_pdf(metrics: FaceMetrics, name: str = "") -> bytes:
         _full_metric_page(c, metrics, metric_tuple, i, page_num=3 + i)
         c.showPage()
 
-    # Страницы 23–25: рекомендации
+    # ── Рекомендации и план ────────────────────────────────────────────────────
     all_scores = [(f, getattr(metrics, f, 5.0)) for f, _, __ in METRIC_ORDER_FULL]
     sorted_asc = sorted(all_scores, key=lambda x: x[1])
     weak_5 = sorted_asc[:5]
     name_map = {f: n for f, n, _ in METRIC_ORDER_FULL}
 
-    # Страница 23: Слабые зоны
-    blocks_23 = []
+    # ── Страница 23: Персональные рекомендации по слабым зонам ────────────────
+    _rect(c, 0, 0, W, H, fill=BG)
+    _header(c)
+    y23 = MT + 14*mm
+    _txt(c, "Персональные рекомендации", ML, y23, font=B, size=14, color=WHITE_TXT)
+    _hline(c, ML, y23 + 4*mm, BW, color=LINE)
+    y23 += 10*mm
+    _para(c,
+          "Ниже — конкретные шаги по улучшению твоих трёх наиболее слабых зон. "
+          "Начни с первого пункта — он даст максимальный эффект за минимальное время.",
+          ML, y23, BW, 16, font=R, size=10, color=DIM, align=TA_JUSTIFY)
+    y23 += 18*mm
+
     for wf, ws in weak_5[:3]:
         wn = name_map[wf]
         advice = METRIC_ADVICE.get(wf, "Работай над этой метрикой системно.")
-        blocks_23.append((f"{wn}  —  {ws:.2f} / 10", advice))
-
-    _rect(c, 0, 0, W, H, fill=WHITE)
-    _header(c)
-    y23 = MT + 14*mm
-    _txt(c, "Рекомендации по слабым зонам", ML, y23, font=B, size=14, color=BLACK)
-    _hline(c, ML, y23 + 4*mm, BW)
-    y23 += 10*mm
-    _para(c,
-          "Ниже представлены конкретные шаги по улучшению трёх наиболее слабых метрик твоего лица. "
-          "Начни с первого пункта — он даст максимальный эффект.",
-          ML, y23, BW, 16, font=R, size=10, color=GRAY, align=TA_JUSTIFY)
-    y23 += 18*mm
-
-    for block_title, block_text in blocks_23:
-        _rect(c, ML, y23, BW, 7*mm, fill=LGRAY)
-        _txt(c, block_title, ML + 4, y23 + 4.5*mm, font=B, size=9.5, color=BLACK)
-        y23 += 9*mm
-        _para(c, block_text, ML, y23, BW, 28,
-              font=R, size=9.5, color=BLACK, align=TA_JUSTIFY)
+        _rect(c, ML, y23, BW, 6*mm, fill=PANEL)
+        _rect(c, ML, y23, 3, 6*mm, fill=C_LOW)
+        _txt(c, f"{wn}  —  {ws:.2f} / 10", ML + 7, y23 + 4*mm, font=B, size=9.5, color=WHITE_TXT)
+        y23 += 8*mm
+        _para(c, advice, ML, y23, BW, 28,
+              font=R, size=9.5, color=DIM, align=TA_JUSTIFY)
         y23 += 32*mm
 
     _footer(c, 23, 25)
     c.showPage()
 
-    # Страница 24: Ещё 2 зоны + уход
-    blocks_24 = []
-    for wf, ws in weak_5[3:5]:
-        wn = name_map[wf]
-        advice = METRIC_ADVICE.get(wf, "Работай над этой метрикой системно.")
-        blocks_24.append((f"{wn}  —  {ws:.2f} / 10", advice))
-
-    _rect(c, 0, 0, W, H, fill=WHITE)
+    # ── Страница 24: Глобальные методы улучшения внешности ───────────────────
+    _rect(c, 0, 0, W, H, fill=BG)
     _header(c)
     y24 = MT + 14*mm
-    _txt(c, "Уход и стиль", ML, y24, font=B, size=14, color=BLACK)
-    _hline(c, ML, y24 + 4*mm, BW)
+    _txt(c, "40+ методов улучшить внешность", ML, y24, font=B, size=14, color=WHITE_TXT)
+    _hline(c, ML, y24 + 4*mm, BW, color=LINE)
     y24 += 10*mm
 
-    for block_title, block_text in blocks_24:
-        _rect(c, ML, y24, BW, 7*mm, fill=LGRAY)
-        _txt(c, block_title, ML + 4, y24 + 4.5*mm, font=B, size=9.5, color=BLACK)
-        y24 += 9*mm
-        _para(c, block_text, ML, y24, BW, 28,
-              font=R, size=9.5, color=BLACK, align=TA_JUSTIFY)
-        y24 += 32*mm
-
-    care_blocks = [
-        ("Базовый уход за кожей",
-         "SPF 30–50 каждый день без исключений — главный антивозрастной инструмент. "
-         "Увлажняющий крем утром и вечером. Ретинол 0.025% на ночь раз в неделю — "
-         "выравнивает текстуру и поры. Через 3 месяца результат будет заметен."),
-        ("Сон и образ жизни",
-         "7–9 часов сна снижают отёчность и улучшают кожу. "
-         "Вода 2.5–3 л/день убирает задержку жидкости в лице. "
-         "Ограничь сахар и переработанные продукты — кожа реагирует в течение 2–3 дней."),
+    improvement_blocks = [
+        ("1. Мьюинг (долгосрочно)",
+         "Прижимай язык целиком к нёбу — не только кончик. Зубы сомкнуты, губы закрыты, дышишь носом. "
+         "Это единственный доказанный метод нехирургического изменения структуры лица у взрослых. "
+         "Эффект заметен через 6–24 месяца: подъём скул, улучшение кантального тильта, "
+         "более чёткая линия челюсти."),
+        ("2. Снижение % жира до 10–13%",
+         "Это самый быстрый способ улучшить большинство метрик лица сразу. "
+         "Скулы проявляются, подбородок обретает чёткость, нижняя треть становится резкой. "
+         "Дефицит калорий 300–500 ккал/день. Протеин 2–2.5 г/кг. Силовые тренировки 3–4 раза в неделю."),
+        ("3. Уход за кожей",
+         "SPF 30–50 ежедневно — главный антивозрастной инструмент. "
+         "Увлажняющий крем утром и вечером поддерживает тургор. "
+         "Ретинол 0.025% раз в неделю на ночь — выравнивает текстуру, поры, тон. "
+         "Через 3 месяца эффект виден невооружённым глазом."),
+        ("4. Брови: форма и заполненность",
+         "Правильная форма бровей — один из самых доступных инструментов. "
+         "Архитектура: начало — над внутренним углом глаза, конец — у внешнего. "
+         "Не выщипывай снизу: это визуально опускает брови. "
+         "Карандаш или помада для бровей в тон волосам — заполняет пробелы без искусственного вида."),
+        ("5. Причёска и контур лица",
+         "Fade / undercut с высокой верхней частью подчёркивает скулы. "
+         "Объём на макушке удлиняет лицо — хорошо для круглых форм. "
+         "Выбритые виски создают оптический рельеф скуловой кости. "
+         "Выбирай причёску, которая визуально компенсирует слабые метрики твоего лица."),
     ]
-    for block_title, block_text in care_blocks:
-        if y24 > H - 50*mm:
+
+    for btitle, btext in improvement_blocks:
+        if y24 > H - 55*mm:
             break
-        _rect(c, ML, y24, BW, 7*mm, fill=LGRAY)
-        _txt(c, block_title, ML + 4, y24 + 4.5*mm, font=B, size=9.5, color=BLACK)
-        y24 += 9*mm
-        _para(c, block_text, ML, y24, BW, 28,
-              font=R, size=9.5, color=BLACK, align=TA_JUSTIFY)
+        _rect(c, ML, y24, BW, 6*mm, fill=PANEL)
+        _rect(c, ML, y24, 3, 6*mm, fill=INFL_BD)
+        _txt(c, btitle, ML + 7, y24 + 4*mm, font=B, size=9.5, color=WHITE_TXT)
+        y24 += 8*mm
+        _para(c, btext, ML, y24, BW, 28,
+              font=R, size=9.5, color=DIM, align=TA_JUSTIFY)
         y24 += 32*mm
 
     _footer(c, 24, 25)
     c.showPage()
 
-    # Страница 25: Итог
-    _rect(c, 0, 0, W, H, fill=WHITE)
+    # ── Страница 25: Итог ─────────────────────────────────────────────────────
+    _rect(c, 0, 0, W, H, fill=BG)
     _header(c)
     y25 = MT + 14*mm
-    _txt(c, "Итог и план действий", ML, y25, font=B, size=14, color=BLACK)
-    _hline(c, ML, y25 + 4*mm, BW)
+    _txt(c, "Итог и план действий", ML, y25, font=B, size=14, color=WHITE_TXT)
+    _hline(c, ML, y25 + 4*mm, BW, color=LINE)
     y25 += 12*mm
 
     top = _top_pct(metrics.overall_score)
     _para(c,
           f"Твой итоговый балл {metrics.overall_score:.2f}/10 ставит тебя в топ {top} "
-          f"по геометрии лица. Это объективный результат — хорошая база для работы.",
-          ML, y25, BW, 20, font=B, size=11, color=BLACK, align=TA_CENTER)
+          f"по геометрии лица. Это объективный фундамент — база для работы.",
+          ML, y25, BW, 20, font=B, size=11, color=WHITE_TXT, align=TA_CENTER)
     y25 += 22*mm
 
     all_strong_3 = sorted(all_scores, key=lambda x: x[1], reverse=True)[:3]
-    _txt(c, "Твои сильные стороны:", ML, y25, font=B, size=10, color=BLACK)
+    _txt(c, "Твои сильные стороны:", ML, y25, font=B, size=10, color=WHITE_TXT)
     y25 += 6*mm
     for sf, ss in all_strong_3:
         _txt(c, f"  ●  {name_map[sf]}  —  {ss:.2f}/10", ML + 4, y25,
@@ -1038,35 +1165,37 @@ def generate_full_pdf(metrics: FaceMetrics, name: str = "") -> bytes:
         y25 += 5.5*mm
 
     y25 += 5*mm
-    _txt(c, "С чего начать:", ML, y25, font=B, size=10, color=BLACK)
+    _txt(c, "С чего начать прямо сейчас:", ML, y25, font=B, size=10, color=WHITE_TXT)
     y25 += 7*mm
 
     action_plan = [
-        "1.   Пройди по рекомендациям из страниц 23–24 — начни с первого пункта.",
-        "2.   Введи базовый уход за кожей (SPF + увлажнение + ретинол).",
-        "3.   Начни мьюинг — это долгосрочное изменение структуры лица.",
-        "4.   Оптимизируй сон и питание — быстрый вклад в качество кожи.",
-        "5.   Сделай повторный разбор через 6–12 месяцев, чтобы отследить прогресс.",
+        "1.   Мьюинг — начни сегодня. Язык в нёбо, дыши носом.",
+        "2.   Снижай % жира: дефицит 300 ккал/день + силовые тренировки.",
+        "3.   Введи базовый уход: SPF + увлажнение + ретинол раз в неделю.",
+        "4.   Скорректируй причёску под свои слабые метрики.",
+        "5.   Оптимизируй сон 7–9 ч и воду 2.5–3 л — убирает отёки лица.",
+        "6.   Исправь форму бровей — эффект виден немедленно.",
+        "7.   Жвачка Falim 20 мин/день — долгосрочная работа с жевательной мышцей.",
+        "8.   Сделай повторный разбор через 6–12 месяцев, чтобы отследить прогресс.",
     ]
     for step in action_plan:
-        _para(c, step, ML, y25, BW, 14, font=R, size=10, color=BLACK)
-        y25 += 15*mm
+        _para(c, step, ML, y25, BW, 13, font=R, size=10, color=DIM)
+        y25 += 14*mm
 
     y25 += 5*mm
-    _hline(c, ML, y25, BW)
+    _hline(c, ML, y25, BW, color=LINE)
     y25 += 10*mm
 
     _para(c,
           "Красота — это не данность, а процесс. Геометрия задаёт фундамент, "
           "стиль и уход раскрывают его потенциал.",
-          ML, y25, BW, 16, font=B, size=11, color=GRAY, align=TA_CENTER)
+          ML, y25, BW, 16, font=B, size=11, color=DIM, align=TA_CENTER)
     y25 += 20*mm
 
-    # Финальный блок-кнопка
     btn_h = 12*mm
-    _rect(c, ML, y25, BW, btn_h, fill=BLACK)
+    _rect(c, ML, y25, BW, btn_h, fill=INFL_BD)
     _txt(c, f"Telegram: {HANDLE}  —  Facedex",
-         W / 2, y25 + btn_h / 2 + 1.5*mm, font=B, size=11, color=WHITE, align="center")
+         W / 2, y25 + btn_h / 2 + 1.5*mm, font=B, size=11, color=WHITE_TXT, align="center")
 
     _footer(c, 25, 25)
     c.showPage()
