@@ -13,27 +13,31 @@ MODEL_PATH = os.path.join(os.path.dirname(__file__), "..", "assets", "face_landm
 GOLDEN_RATIO = 1.618033988749895
 
 # ── Нормы Лесли Фаркаса (мужчины) ────────────────────────────────────────────
-# mean, std  для каждого параметра
+# mean, effective_std
+# ВАЖНО: публикационные std Фаркаса взяты из узкой однородной выборки.
+# Реальное мировое разнообразие значительно шире, поэтому std умножены на 2.2
+# чтобы ±1 "реальная σ" ≈ ±2.2 Farkas-σ. Иначе большинство нормальных лиц
+# попадают в 3+ σ и уходят на минимум.
 FARKAS = {
-    "face_hw_ratio":        (0.896, 0.035),  # высота/ширина лица
-    "vertical_balance":     (0.728, 0.042),  # средняя треть / нижняя треть
-    "cheek_jaw":            (1.356, 0.095),  # скулы / челюсть
-    "eye_to_face":          (0.223, 0.018),  # ширина глаза / ширина лица
-    "inner_eye_to_face":    (0.271, 0.022),  # расстояние между внутр. углами / ширина
-    "canthal_tilt":         (0.036, 0.025),  # нормализованный наклон (tilt/eye_w)
-    "nose_to_face":         (0.234, 0.021),  # ширина носа / ширина лица
-    "mouth_to_face":        (0.403, 0.028),  # ширина рта / ширина лица
-    "nose_length":          (0.421, 0.032),  # длина носа / высота лица
-    "chin_length":          (0.283, 0.020),  # длина подбородка / высота лица
-    "chin_contour":         (0.630, 0.060),  # угол сужения подбородка
-    "nose_to_mouth":        (0.583, 0.042),  # ширина носа / ширина рта
-    "biocular_width":       (0.713, 0.050),  # межкантальная ширина / ширина лица
-    "forehead_width":       (0.919, 0.055),  # ширина лба / ширина лица
-    "lip_fullness":         (0.347, 0.028),  # высота губ / ширина рта
-    "lip_ratio":            (0.639, 0.065),  # верхняя губа / нижняя губа
-    "jaw_to_mouth":         (1.810, 0.140),  # ширина челюсти / ширина рта
-    "eye_shape":            (0.285, 0.025),  # высота/ширина глаза
-    "brow_height":          (0.063, 0.012),  # расстояние бровь-глаз / высота лица
+    "face_hw_ratio":        (0.896, 0.077),  # 0.035 × 2.2
+    "vertical_balance":     (0.728, 0.092),  # 0.042 × 2.2
+    "cheek_jaw":            (1.356, 0.209),  # 0.095 × 2.2
+    "eye_to_face":          (0.223, 0.040),  # 0.018 × 2.2
+    "inner_eye_to_face":    (0.271, 0.048),  # 0.022 × 2.2
+    "canthal_tilt":         (0.036, 0.055),  # 0.025 × 2.2
+    "nose_to_face":         (0.234, 0.046),  # 0.021 × 2.2
+    "mouth_to_face":        (0.403, 0.062),  # 0.028 × 2.2
+    "nose_length":          (0.421, 0.070),  # 0.032 × 2.2
+    "chin_length":          (0.283, 0.044),  # 0.020 × 2.2
+    "chin_contour":         (0.630, 0.132),  # 0.060 × 2.2
+    "nose_to_mouth":        (0.583, 0.092),  # 0.042 × 2.2
+    "biocular_width":       (0.713, 0.110),  # 0.050 × 2.2
+    "forehead_width":       (0.919, 0.121),  # 0.055 × 2.2
+    "lip_fullness":         (0.347, 0.062),  # 0.028 × 2.2
+    "lip_ratio":            (0.639, 0.143),  # 0.065 × 2.2
+    "jaw_to_mouth":         (1.810, 0.308),  # 0.140 × 2.2
+    "eye_shape":            (0.285, 0.055),  # 0.025 × 2.2
+    "brow_height":          (0.063, 0.026),  # 0.012 × 2.2
 }
 
 
@@ -131,19 +135,21 @@ def _sigma_score(value, mean, std, direction="both", min_score=3.5):
     z = (value - mean) / std
 
     if direction == "both":
-        score = 6.5 - abs(z) * 1.5
+        # −1.0/σ: более мягкий штраф, пол достигается только при экстремальных отклонениях
+        # 0σ=6.5 | 1σ=5.5 | 2σ=4.5 | 3σ=3.5(пол)
+        score = 6.5 - abs(z) * 1.0
 
     elif direction == "up":
         if z >= 0:
             score = 6.5 + z * 1.5     # бонус за хорошее значение
         else:
-            score = 6.5 + z * 0.7     # мягкий штраф: нейтральный тильт ≠ плохо
+            score = 6.5 + z * 0.5     # мягкий штраф (нейтральный ≠ плохо)
 
     else:  # direction == "down"
         if z <= 0:
             score = 6.5 + (-z) * 1.5  # бонус за маскулинное значение
         else:
-            score = 6.5 - z * 0.7     # мягкий штраф
+            score = 6.5 - z * 0.5     # мягкий штраф
 
     return round(max(min_score, min(10.0, score)), 2)
 
@@ -380,7 +386,9 @@ def analyze_face(image_bytes: bytes) -> Optional[FaceMetrics]:
     #   nose_len: "both" — и слишком длинный, и слишком короткий нехорошо
     #
     golden_ratio_score      = _golden_ratio_score(face_height, face_width)
-    face_proportions_score  = _sigma_score(hw_ratio,          *FARKAS["face_hw_ratio"])
+    # Длинное лицо (высокий hw_ratio) у мужчин маскулиннее → direction="up"
+    face_proportions_score  = _sigma_score(hw_ratio,          *FARKAS["face_hw_ratio"],
+                                           direction="up")
     vertical_balance_score  = _sigma_score(vert_balance,      *FARKAS["vertical_balance"])
     cheekbones_score        = _sigma_score(cheek_jaw_ratio,   *FARKAS["cheek_jaw"],
                                            direction="down")   # шире челюсть = лучше
