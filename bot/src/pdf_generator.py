@@ -332,27 +332,30 @@ def _draw_gauge(c, cx, cy, r, score):
 
 def _draw_comparison_bars(c, x, y_top, w, your_val, norm_val):
     """
-    Два горизонтальных бара «Вы» vs «Норма» в кадре.
+    Два горизонтальных бара «Вы» vs «Норма».
+    Метка — НАД баром, бар — под ней. Контрастные цвета.
     """
     if your_val is None or norm_val is None:
         return
     max_v = max(abs(float(your_val)), abs(float(norm_val)), 0.001)
-    bar_h = 6
+    bar_h = 5
     bar_max_w = w
-    gap = 4
+    label_gap = 4   # px между меткой и баром
 
     # — Ваш показатель
-    yw = bar_max_w * (abs(float(your_val)) / max_v)
-    _rect(c, x, y_top, bar_max_w, bar_h, fill=PANEL)
-    _rect(c, x, y_top, yw, bar_h, fill=INFL_BD)
     _txt(c, f"Вы: {your_val}", x, y_top - 1, font=B, size=6.5, color=WHITE_TXT)
+    bar_y = y_top + label_gap
+    yw = bar_max_w * (abs(float(your_val)) / max_v)
+    _rect(c, x, bar_y, bar_max_w, bar_h, fill=PANEL)
+    _rect(c, x, bar_y, yw, bar_h, fill=INFL_BD)
 
     # — Норма Фаркаса
-    y2 = y_top + bar_h + gap
-    nw = bar_max_w * (abs(float(norm_val)) / max_v)
-    _rect(c, x, y2, bar_max_w, bar_h, fill=PANEL)
-    _rect(c, x, y2, nw, bar_h, fill=DIM)
+    y2 = bar_y + bar_h + 6
     _txt(c, f"Норма: {norm_val}", x, y2 - 1, font=B, size=6.5, color=DIM)
+    bar_y2 = y2 + label_gap
+    nw = bar_max_w * (abs(float(norm_val)) / max_v)
+    _rect(c, x, bar_y2, bar_max_w, bar_h, fill=PANEL)
+    _rect(c, x, bar_y2, nw, bar_h, fill=colors.HexColor("#555555"))
 
 
 def _draw_percentile_strip(c, x, y_top, w, score):
@@ -965,13 +968,16 @@ def _full_overview(c, metrics):
     legend_y += 6*mm
     for field, name, num in METRIC_ORDER_FULL[:10]:
         sc = _get_score(metrics, field)
-        bar_w_full = 60*mm
-        _rect(c, legend_x, legend_y, bar_w_full, 3.5, fill=PANEL)
-        _rect(c, legend_x, legend_y, bar_w_full * sc / 10, 3.5, fill=_sc(sc))
-        _txt(c, f"{name[:14]}", legend_x - 1, legend_y + 3.5, font=R, size=6, color=DIM)
-        _txt(c, f"{sc:.1f}", legend_x + bar_w_full + 2, legend_y + 3.5,
-             font=B, size=6.5, color=_sc(sc))
-        legend_y += 5.5*mm
+        bar_w_full = 56*mm
+        # Метка — строго НАД баром (baseline at legend_y-1, текст уходит вверх)
+        _txt(c, f"{name[:16]}", legend_x, legend_y - 1,
+             font=R, size=6, color=WHITE_TXT)
+        _txt(c, f"{sc:.1f}", legend_x + bar_w_full + 3, legend_y + 4,
+             font=B, size=7, color=_sc(sc))
+        # Бар — ниже метки
+        _rect(c, legend_x, legend_y + 2, bar_w_full, 4, fill=PANEL)
+        _rect(c, legend_x, legend_y + 2, bar_w_full * sc / 10, 4, fill=_sc(sc))
+        legend_y += 7.5*mm
 
     y += 86*mm
     _hline(c, ML, y, BW)
