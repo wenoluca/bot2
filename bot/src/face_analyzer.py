@@ -58,6 +58,9 @@ class FaceMetrics:
     eyebrows_score: float = 0.0
     balance_score: float = 0.0
 
+    # Gender estimate (heuristic, not guaranteed)
+    likely_female: bool = False
+
     # Extended 20-metric scores
     face_proportions_score: float = 0.0      # H/W ratio
     vertical_balance_score: float = 0.0     # средняя/нижняя трети
@@ -418,6 +421,50 @@ def analyze_face(image_bytes: bytes) -> Optional[FaceMetrics]:
     grade = _get_grade(overall)
     tier  = _get_tier(overall)
 
+    # ── Эвристика пола ───────────────────────────────────────────────────────
+    # Используем геометрические признаки, хорошо коррелирующие с полом:
+    #   cheek_jaw_ratio  — у женщин выше (более овальное лицо)
+    #   lip_fullness     — у женщин больше
+    #   hw_ratio         — у женщин ниже (более круглое лицо)
+    #   chin_contour     — у женщин меньше (более заострённый подбородок)
+    #   canthal_tilt     — у женщин часто выше (более позитивный тильт)
+    #   forehead_ratio   — у женщин меньше
+
+    female_score = 0
+    male_score   = 0
+
+    # Скулы / челюсть
+    if cheek_jaw_ratio > 1.52:   female_score += 2
+    elif cheek_jaw_ratio < 1.28: male_score += 2
+    else:                         male_score += 1   # в зоне мужской нормы
+
+    # Полнота губ
+    if lip_fullness > 0.40:      female_score += 2
+    elif lip_fullness < 0.32:    male_score += 1
+
+    # Соотношение высота/ширина лица
+    if hw_ratio < 0.82:          female_score += 1   # более круглое
+    elif hw_ratio > 0.90:        male_score += 1     # более вытянутое
+
+    # Контур подбородка (сужение к подбородку)
+    if chin_contour < 0.57:      female_score += 1
+    elif chin_contour > 0.66:    male_score += 1
+
+    # Кантальный тильт
+    if canthal_tilt_degrees > 4.0:  female_score += 1
+    elif canthal_tilt_degrees < 0:  male_score += 1
+
+    # Ширина лба
+    if forehead_ratio < 0.87:    female_score += 1
+    elif forehead_ratio > 0.93:  male_score += 1
+
+    # Форма глаза (более округлые = женские)
+    if eye_shape_r > 0.32:       female_score += 1
+    elif eye_shape_r < 0.24:     male_score += 1
+
+    # Решение: помечаем «вероятно женщина» только при явном перевесе
+    likely_female = (female_score >= 4) and (female_score > male_score + 1)
+
     # ── Аннотированное фото ──────────────────────────────────────────────────
     annotated = img.copy()
     _draw_overlay(annotated, lms, w, h, overall, tier)
@@ -433,6 +480,7 @@ def analyze_face(image_bytes: bytes) -> Optional[FaceMetrics]:
         overall_score=overall,
         grade=grade,
         tier=tier,
+        likely_female=likely_female,
         eyes_score=eyes_score,
         nose_score=nose_score,
         lips_score=lips_score,

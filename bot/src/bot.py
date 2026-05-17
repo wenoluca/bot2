@@ -437,6 +437,20 @@ async def photo_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         uname = user.username or user.first_name or "user"
 
+        # ── Предупреждение если определён женский пол ────────────────────────
+        if metrics.likely_female:
+            await update.message.reply_text(
+                "⚠️ <b>Внимание!</b>\n\n"
+                "Facedex оптимизирован под <b>мужскую</b> геометрию лица — "
+                "нормы Фаркаса и все метрики настроены именно под мужские пропорции.\n\n"
+                "На твоём фото обнаружены черты, характерные для <b>женского</b> лица. "
+                "Разбор будет сравнивать тебя с мужскими нормами, поэтому оценки "
+                "могут не отражать реальную привлекательность.\n\n"
+                "🚧 <i>Женская версия анализа находится в разработке — "
+                "следи за обновлениями!</i>",
+                parse_mode=ParseMode.HTML,
+            )
+
         if tier == "brief":
             pdf_b = await loop.run_in_executor(None, generate_brief_pdf, metrics, uname)
             await context.bot.send_document(
