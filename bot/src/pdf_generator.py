@@ -398,7 +398,7 @@ def _draw_percentile_strip(c, x, y_top, w, score):
 
 # ── Данные метрик ─────────────────────────────────────────────────────────────
 FARKAS_NORMS = {
-    "symmetry":         ("Симметрия лица",            None,   None,   None),
+    "symmetry":         ("Симметрия лица",            0.920,  None,   0.040),
     "face_proportions": ("Пропорции лица",            0.896,  "face_hw_ratio",   0.077),
     "vertical_balance": ("Вертикальный баланс",       0.728,  "vert_balance",    0.110),
     "cheekbones":       ("Баланс скул и челюсти",     1.356,  "cheek_jaw_ratio", 0.209),
@@ -1204,11 +1204,11 @@ def _full_metric_page(c, metrics, metric_tuple, m_idx, page_num):
         _, norm_val, detail_key, norm_std = FARKAS_NORMS[meta_key]
         if detail_key:
             your_val = metrics.details.get(detail_key)
-            if your_val is None and field == "symmetry_score":
-                e  = metrics.details.get("eye_symmetry", 0)
-                ck = metrics.details.get("cheek_symmetry", 0)
-                m  = metrics.details.get("mouth_symmetry", 0)
-                your_val = round((e + ck + m) / 30, 3)
+        if field == "symmetry_score":
+            e  = metrics.details.get("eye_symmetry", 0)
+            ck = metrics.details.get("cheek_symmetry", 0)
+            m  = metrics.details.get("mouth_symmetry", 0)
+            your_val = round((e + ck + m) / 30, 3)
 
     # ── Фон страницы ──────────────────────────────────────────────────────────
     _rect(c, 0, 0, W, H, fill=BG)
@@ -1257,7 +1257,8 @@ def _full_metric_page(c, metrics, metric_tuple, m_idx, page_num):
     _txt(c, "БАЛЛ", col2_x + 4, ry, font=B, size=7.5, color=DIM)
     ry += 5*mm
     _txt(c, f"{score:.2f} / 10", col2_x + 4, ry, font=B, size=17, color=sc_col)
-    ry += 9*mm
+    _txt(c, _lv(score), col2_x + 4, ry + 6*mm, font=R, size=7.5, color=sc_col)
+    ry += 13*mm
 
     _hline(c, col2_x + 4, ry, col2_w - 8, color=LINE, lw=0.4)
     ry += 4*mm
@@ -1265,18 +1266,28 @@ def _full_metric_page(c, metrics, metric_tuple, m_idx, page_num):
     _txt(c, "ВАШ ПОКАЗАТЕЛЬ", col2_x + 4, ry, font=B, size=6.5, color=DIM)
     ry += 4.5*mm
     yv_str = str(your_val) if your_val is not None else "—"
-    _txt(c, yv_str, col2_x + 4, ry, font=B, size=11, color=WHITE_TXT)
-    ry += 6*mm
+    _txt(c, yv_str, col2_x + 4, ry, font=B, size=13, color=WHITE_TXT)
+    ry += 7*mm
 
     _txt(c, "НОРМА (Фаркас)", col2_x + 4, ry, font=B, size=6.5, color=DIM)
     ry += 4.5*mm
     nv_str = str(round(norm_val, 3)) if norm_val is not None else "—"
-    _txt(c, nv_str, col2_x + 4, ry, font=B, size=11, color=DIM)
+    _txt(c, nv_str, col2_x + 4, ry, font=B, size=13, color=DIM)
     ry += 7*mm
+
+    # σ-отклонение
+    if your_val is not None and norm_val is not None and norm_std:
+        sigma_val = abs(your_val - norm_val) / norm_std
+        sigma_dir = "↑" if your_val > norm_val else "↓"
+        _txt(c, "ОТКЛ. (σ)", col2_x + 4, ry, font=B, size=6.5, color=DIM)
+        ry += 4.5*mm
+        sigma_col = C_HIGH if sigma_val <= 1.0 else (C_MID if sigma_val <= 2.0 else C_LOW)
+        _txt(c, f"{sigma_val:.2f}σ {sigma_dir}", col2_x + 4, ry, font=B, size=12, color=sigma_col)
+        ry += 7*mm
 
     _hline(c, col2_x + 4, ry, col2_w - 8, color=LINE, lw=0.4)
     ry += 4*mm
-    _para(c, what_text, col2_x + 4, ry, col2_w - 8, 20,
+    _para(c, what_text, col2_x + 4, ry, col2_w - 8, 16,
           font=R, size=7, color=DIM, align=TA_LEFT)
 
     # ── Колонка 3: Процентиль + сравнение ─────────────────────────────────
