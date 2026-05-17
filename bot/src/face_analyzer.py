@@ -406,7 +406,7 @@ def analyze_face(image_bytes: bytes) -> Optional[FaceMetrics]:
     nose_to_mouth_score     = _sigma_score(nose_to_mouth,     *FARKAS["nose_to_mouth"])
     biocular_score          = _sigma_score(biocular_width,    *FARKAS["biocular_width"])
     forehead_score          = _sigma_score(forehead_ratio,    *FARKAS["forehead_width"],
-                                           direction="up")     # шире лоб = мужественнее
+                                           direction="both")   # оценивается в гармонии, не авто-награда за ширину
     lip_fullness_score      = _sigma_score(lip_fullness,      *FARKAS["lip_fullness"],
                                            direction="up")     # умеренный объём = плюс, тонкие = минус
     lip_ratio_score         = _sigma_score(lip_ratio,         *FARKAS["lip_ratio"])
