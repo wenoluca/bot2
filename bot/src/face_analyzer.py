@@ -20,15 +20,15 @@ GOLDEN_RATIO = 1.618033988749895
 # попадают в 3+ σ и уходят на минимум.
 FARKAS = {
     "face_hw_ratio":        (0.896, 0.077),  # 0.035 × 2.2
-    "vertical_balance":     (0.728, 0.092),  # 0.042 × 2.2
+    "vertical_balance":     (0.728, 0.110),  # 0.042 × 2.6 — шире норма для мужских лиц
     "cheek_jaw":            (1.356, 0.209),  # 0.095 × 2.2
     "eye_to_face":          (0.223, 0.040),  # 0.018 × 2.2
     "inner_eye_to_face":    (0.271, 0.048),  # 0.022 × 2.2
     "canthal_tilt":         (0.036, 0.055),  # 0.025 × 2.2
     "nose_to_face":         (0.234, 0.046),  # 0.021 × 2.2
     "mouth_to_face":        (0.403, 0.062),  # 0.028 × 2.2
-    "nose_length":          (0.421, 0.070),  # 0.032 × 2.2
-    "chin_length":          (0.283, 0.044),  # 0.020 × 2.2
+    "nose_length":          (0.421, 0.112),  # 0.032 × 3.5 — более широкий диапазон нормы
+    "chin_length":          (0.283, 0.060),  # 0.020 × 3.0 — более широкий диапазон
     "chin_contour":         (0.630, 0.132),  # 0.060 × 2.2
     "nose_to_mouth":        (0.583, 0.092),  # 0.042 × 2.2
     "biocular_width":       (0.713, 0.110),  # 0.050 × 2.2
@@ -389,7 +389,9 @@ def analyze_face(image_bytes: bytes) -> Optional[FaceMetrics]:
     # Длинное лицо (высокий hw_ratio) у мужчин маскулиннее → direction="up"
     face_proportions_score  = _sigma_score(hw_ratio,          *FARKAS["face_hw_ratio"],
                                            direction="up")
-    vertical_balance_score  = _sigma_score(vert_balance,      *FARKAS["vertical_balance"])
+    # Vert balance = middle/lower. Ниже нормы = длиннее нижняя треть = мужественнее → direction="down"
+    vertical_balance_score  = _sigma_score(vert_balance,      *FARKAS["vertical_balance"],
+                                           direction="down")
     cheekbones_score        = _sigma_score(cheek_jaw_ratio,   *FARKAS["cheek_jaw"],
                                            direction="down")   # шире челюсть = лучше
     eyes_score              = _sigma_score(eye_to_face,       *FARKAS["eye_to_face"])

@@ -398,27 +398,104 @@ def _draw_percentile_strip(c, x, y_top, w, score):
 
 # ── Данные метрик ─────────────────────────────────────────────────────────────
 FARKAS_NORMS = {
-    "symmetry":         ("Симметрия лица",            None,   None),
-    "face_proportions": ("Пропорции лица",            0.896,  "face_hw_ratio"),
-    "vertical_balance": ("Вертикальный баланс",       0.728,  "vert_balance"),
-    "cheekbones":       ("Баланс скул и челюсти",     1.356,  "cheek_jaw_ratio"),
-    "eyes":             ("Размер глаз",               0.223,  "eye_to_face"),
-    "eye_distance":     ("Расстояние между глазами",  0.271,  "inner_eye_to_face"),
-    "canthal_tilt":     ("Наклон глаз",               0.036,  "canthal_norm"),
-    "nose":             ("Ширина носа",               0.234,  "nose_to_face"),
-    "lips":             ("Ширина рта",                0.403,  "mouth_to_face"),
-    "nose_length":      ("Длина носа",                0.421,  "nose_len_ratio"),
-    "chin_length":      ("Длина подбородка",          0.283,  "chin_len_ratio"),
-    "chin_contour":     ("Контур подбородка",         0.630,  "chin_contour"),
-    "nose_to_mouth":    ("Нос к ширине рта",          0.583,  "nose_to_mouth"),
-    "biocular":         ("Биокулярная ширина",        0.713,  "biocular_width"),
-    "forehead":         ("Ширина лба",                0.919,  "forehead_ratio"),
-    "lip_fullness":     ("Полнота губ",               0.347,  "lip_fullness"),
-    "lip_ratio":        ("Пропорции губ",             0.639,  "lip_ratio"),
-    "jaw_to_mouth":     ("Челюсть к ширине рта",      1.810,  "jaw_to_mouth"),
-    "eye_shape":        ("Форма глаз",                0.285,  "eye_shape"),
-    "brow_height":      ("Высота бровей",             0.063,  "brow_dist_ratio"),
+    "symmetry":         ("Симметрия лица",            None,   None,   None),
+    "face_proportions": ("Пропорции лица",            0.896,  "face_hw_ratio",   0.077),
+    "vertical_balance": ("Вертикальный баланс",       0.728,  "vert_balance",    0.110),
+    "cheekbones":       ("Баланс скул и челюсти",     1.356,  "cheek_jaw_ratio", 0.209),
+    "eyes":             ("Размер глаз",               0.223,  "eye_to_face",     0.040),
+    "eye_distance":     ("Расстояние между глазами",  0.271,  "inner_eye_to_face", 0.048),
+    "canthal_tilt":     ("Наклон глаз",               0.036,  "canthal_norm",    0.055),
+    "nose":             ("Ширина носа",               0.234,  "nose_to_face",    0.046),
+    "lips":             ("Ширина рта",                0.403,  "mouth_to_face",   0.062),
+    "nose_length":      ("Длина носа",                0.421,  "nose_len_ratio",  0.112),
+    "chin_length":      ("Длина подбородка",          0.283,  "chin_len_ratio",  0.060),
+    "chin_contour":     ("Контур подбородка",         0.630,  "chin_contour",    0.132),
+    "nose_to_mouth":    ("Нос к ширине рта",          0.583,  "nose_to_mouth",   0.092),
+    "biocular":         ("Биокулярная ширина",        0.713,  "biocular_width",  0.110),
+    "forehead":         ("Ширина лба",                0.919,  "forehead_ratio",  0.121),
+    "lip_fullness":     ("Полнота губ",               0.347,  "lip_fullness",    0.062),
+    "lip_ratio":        ("Пропорции губ",             0.639,  "lip_ratio",       0.143),
+    "jaw_to_mouth":     ("Челюсть к ширине рта",      1.810,  "jaw_to_mouth",    0.308),
+    "eye_shape":        ("Форма глаз",                0.285,  "eye_shape",       0.055),
+    "brow_height":      ("Высота бровей",             0.063,  "brow_dist_ratio", 0.026),
 }
+
+# Описания направлений для генерации текста
+_METRIC_DIRECTIONS = {
+    "symmetry_score":          "both",
+    "face_proportions_score":  "up",
+    "vertical_balance_score":  "down",
+    "cheekbones_score":        "down",
+    "eyes_score":              "both",
+    "eye_distance_score":      "both",
+    "canthal_tilt_score":      "up",
+    "nose_score":              "down",
+    "lips_score":              "both",
+    "nose_length_score":       "both",
+    "chin_length_score":       "both",
+    "chin_contour_score":      "down",
+    "nose_to_mouth_score":     "both",
+    "biocular_score":          "both",
+    "forehead_score":          "up",
+    "lip_fullness_score":      "both",
+    "lip_ratio_score":         "both",
+    "jaw_to_mouth_score":      "up",
+    "eye_shape_score":         "both",
+    "brow_height_score":       "both",
+}
+
+# Что означает отклонение вверх/вниз для каждой метрики
+_DEVIATION_MEANING = {
+    "symmetry_score":          ("высокая симметрия", "асимметрия"),
+    "face_proportions_score":  ("удлинённое, мужественное лицо", "более компактная форма лица"),
+    "vertical_balance_score":  ("более длинная нижняя треть, волевой характер", "более длинная средняя треть"),
+    "cheekbones_score":        ("выраженные скулы относительно челюсти", "широкая челюсть относительно скул"),
+    "eyes_score":              ("более крупные глаза относительно лица", "более компактные глаза"),
+    "eye_distance_score":      ("широкая посадка глаз", "близкая посадка глаз"),
+    "canthal_tilt_score":      ("позитивный кантальный тильт, hunter eyes", "нейтральный или негативный наклон"),
+    "nose_score":              ("аккуратный, узкий нос", "более широкий нос"),
+    "lips_score":              ("широкий рот", "компактный рот"),
+    "nose_length_score":       ("длинная средняя треть", "короткий нос"),
+    "chin_length_score":       ("выраженный, длинный подбородок", "менее выраженный подбородок"),
+    "chin_contour_score":      ("заострённый V-подбородок", "более квадратный подбородок"),
+    "nose_to_mouth_score":     ("нос шире относительно рта", "нос уже относительно рта"),
+    "biocular_score":          ("широкий разрез глаз", "узкий разрез глаз"),
+    "forehead_score":          ("широкий, доминантный лоб", "узкий лоб"),
+    "lip_fullness_score":      ("более полные губы", "более тонкие губы"),
+    "lip_ratio_score":         ("верхняя губа шире нижней", "нижняя губа полнее верхней"),
+    "jaw_to_mouth_score":      ("широкая челюсть относительно рта", "узкая челюсть"),
+    "eye_shape_score":         ("более круглые глаза", "вытянутые горизонтально, хищный разрез"),
+    "brow_height_score":       ("высокие брови", "низкие, нависающие брови"),
+}
+
+
+def _build_sigma_text(field, your_val, norm_val, std, score):
+    """
+    Генерирует текст: «Твоё значение — X при норме Y, отклонение ~Zσ направление, что означает...»
+    Возвращает строку или пустую строку если данных нет.
+    """
+    if your_val is None or norm_val is None or std is None or std == 0:
+        return ""
+    sigma = abs(your_val - norm_val) / std
+    direction_up = your_val > norm_val
+    direction_str = "вверх" if direction_up else "вниз"
+    meaning_up, meaning_down = _DEVIATION_MEANING.get(field, ("выше нормы", "ниже нормы"))
+    meaning = meaning_up if direction_up else meaning_down
+    yv = round(your_val, 3)
+    nv = round(norm_val, 3)
+    return (
+        f"Твоё значение — {yv} при норме {nv}, "
+        f"отклонение ~{sigma:.1f}\u03c3 {direction_str}, "
+        f"что соответствует: {meaning}."
+    )
+
+
+def _build_dynamic_body(field, base_text, your_val, norm_val, std, score):
+    """Собирает финальный текст страницы метрики с реальными значениями."""
+    sigma_line = _build_sigma_text(field, your_val, norm_val, std, score)
+    if sigma_line:
+        return f"{base_text}\n\n{sigma_line}"
+    return base_text
 
 METRICS_20 = [
     ("symmetry_score",        "symmetry",
@@ -783,57 +860,83 @@ def generate_brief_pdf(metrics: FaceMetrics, name: str = "") -> bytes:
     _rect(c, 0, 0, W, H, fill=BG)
     _header(c)
 
-    y = MT + 16*mm
-    _txt(c, "Это — только верхушка айсберга.", ML, y, font=B, size=14, color=WHITE_TXT)
-    y += 8*mm
+    y = MT + 14*mm
+    _txt(c, "Это — только верхушка айсберга.", ML, y, font=B, size=13, color=WHITE_TXT)
+    y += 7*mm
     _para(c,
-          "Краткий разбор показывает лишь 9 из 20 метрик твоего лица и не даёт понять: "
-          "что именно мешает твоей внешности и как это исправить.",
-          ML, y, BW, 20, font=R, size=10.5, color=DIM)
-    y += 22*mm
+          "Краткий разбор показывает лишь 9 из 20 метрик твоего лица и не раскрывает, "
+          "что именно снижает привлекательность и как это исправить конкретными шагами.",
+          ML, y, BW, 16, font=R, size=9.5, color=DIM)
+    y += 18*mm
+
+    # Визуальный блок: "9 метрик из 20"
+    bar_total_w = BW
+    bar_h = 11*mm
+    _rect(c, ML, y, bar_total_w, bar_h, fill=PANEL)
+    filled_w = bar_total_w * 9 / 20
+    _rect(c, ML, y, filled_w, bar_h, fill=INFL_BD)
+    _txt(c, "9 из 20 метрик  (45%)", ML + 4, y + 7.5*mm, font=B, size=8, color=WHITE_TXT)
+    _txt(c, "Краткий разбор", ML + 4, y + 3.5*mm, font=R, size=7, color=DIM)
+    _txt(c, "Полный разбор — все 20 метрик", ML + bar_total_w - 4, y + 5.5*mm,
+         font=B, size=8, color=GOLD, align="right")
+    y += bar_h + 6*mm
 
     _hline(c, ML, y, BW, color=LINE)
-    y += 6*mm
-    _txt(c, "Полный разбор (25 страниц) включает:", ML, y, font=B, size=11, color=GOLD)
-    y += 8*mm
+    y += 5*mm
+    _txt(c, "Полный разбор (25 страниц) включает:", ML, y, font=B, size=10.5, color=GOLD)
+    y += 7*mm
 
     full_bullets = [
-        ("Все 20 метрик с подробным разбором",
-         "Для каждой зоны лица — твой точный показатель, норма Фаркаса, "
+        ("◉  Все 20 метрик с подробным разбором",
+         "Для каждой зоны лица — твой точный показатель, норма Фаркаса, отклонение в σ, "
          "детальное описание и как эта метрика влияет на восприятие тебя окружающими."),
-        ("Конкретные способы улучшить внешность",
+        ("◉  Конкретные способы улучшить внешность",
          "Свыше 40 персонализированных рекомендаций: мьюинг, уход за кожей, причёска, "
-         "борода, питание, сон, контуринг скул, упражнения и многое другое — "
+         "борода, питание, сон, контуринг скул, упражнения — "
          "всё конкретно под твои слабые метрики."),
-        ("Стиль и уход: практические шаги",
-         "Подборка реальных методик (брови, скраб, SPF, ретинол, жвачка Falim, "
-         "ледяные компрессы) с пояснением, когда ожидать результат."),
-        ("Диаграммы и графики",
+        ("◉  Стиль и уход: практические шаги",
+         "Подборка методик (брови, SPF, ретинол, жвачка Falim, ледяные компрессы) "
+         "с пояснением когда ожидать результат и реальные референсы."),
+        ("◉  Диаграммы и графики",
          "Радарный профиль твоих 20 метрик, позиция на кривой нормального распределения, "
          "таблица сравнения твоих показателей с нормой Фаркаса."),
     ]
 
     for btitle, btext in full_bullets:
-        _rect(c, ML, y, BW, 6*mm, fill=PANEL)
-        _rect(c, ML, y, 3, 6*mm, fill=INFL_BD)
-        _txt(c, btitle, ML + 7, y + 4*mm, font=B, size=9.5, color=WHITE_TXT)
-        y += 8*mm
-        _para(c, btext, ML + 4, y, BW - 8, 20,
-              font=R, size=9.5, color=DIM, align=TA_JUSTIFY)
-        y += 22*mm
+        block_h = 22*mm
+        _rect(c, ML, y, BW, block_h, fill=SURFACE, stroke=LINE, lw=0.4)
+        _rect(c, ML, y, 4, block_h, fill=INFL_BD)
+        _txt(c, btitle, ML + 10, y + 5.5*mm, font=B, size=9, color=WHITE_TXT)
+        _para(c, btext, ML + 10, y + 8*mm, BW - 14, block_h - 10*mm,
+              font=R, size=8.5, color=DIM, align=TA_JUSTIFY)
+        y += block_h + 3*mm
 
-    y += 2*mm
-    _hline(c, ML, y, BW, color=LINE)
-    y += 8*mm
+    y += 3*mm
 
-    _para(c,
-          "Ты смотришь на своё лицо каждый день — и именно поэтому не видишь, "
-          "что именно снижает твою привлекательность. Полный разбор — это объективный взгляд "
-          "со стороны, который даст тебе конкретный план действий.",
-          ML, y, BW, 30, font=R, size=10, color=DIM, align=TA_JUSTIFY)
-    y += 33*mm
+    # Мини-превью скрытых метрик
+    _txt(c, "Скрытые метрики (недоступны в кратком разборе):", ML, y,
+         font=B, size=9, color=DIM)
+    y += 5*mm
+    hidden = [
+        ("Вертикальный баланс", "Длина носа", "Длина подбородка", "Биокулярная ширина",
+         "Ширина лба", "Форма глаз", "Пропорции губ", "Полнота губ",
+         "Челюсть к ширине рта", "Нос к ширине рта", "Контур подбородка"),
+    ]
+    cols = 3
+    col_w_h = (BW - (cols - 1) * 2*mm) / cols
+    items = hidden[0]
+    for i, item in enumerate(items):
+        col = i % cols
+        row = i // cols
+        ix = ML + col * (col_w_h + 2*mm)
+        iy = y + row * 6.5*mm
+        _rect(c, ix, iy, col_w_h, 5.5*mm, fill=PANEL)
+        _txt(c, f"? {item}", ix + 3, iy + 3.8*mm, font=R, size=7, color=DIM)
+    rows_count = math.ceil(len(items) / cols)
+    y += rows_count * 6.5*mm + 5*mm
 
-    btn_h = 13*mm
+    # CTA кнопка
+    btn_h = 14*mm
     _rect(c, ML, y, BW, btn_h, fill=INFL_BD)
     _txt(c, "Получить полный разбор  →",
          W / 2, y + btn_h / 2 + 2*mm, font=B, size=12, color=WHITE_TXT, align="center")
@@ -1010,25 +1113,53 @@ def _full_overview(c, metrics):
     _hline(c, ML, y, BW)
     y += 5*mm
 
-    # ОБЩЕЕ ВПЕЧАТЛЕНИЕ
-    _txt(c, "ОБЩЕЕ ВПЕЧАТЛЕНИЕ", ML, y, font=B, size=10, color=WHITE_TXT)
-    y += 6*mm
+    # ── ОБЩЕЕ ВПЕЧАТЛЕНИЕ — большой блок ─────────────────────────────────────
+    imp_h = 38*mm
+    _rect(c, ML, y, BW, imp_h, fill=SURFACE, stroke=LINE, lw=0.5)
+    _rect(c, ML, y, BW, 7*mm, fill=PANEL)
+    _txt(c, "ОБЩЕЕ ВПЕЧАТЛЕНИЕ", ML + 6, y + 5*mm, font=B, size=10, color=WHITE_TXT)
+
+    # Уровень — справа в шапке блока
+    lvl_str = _level_str(metrics.overall_score)
+    _txt(c, lvl_str, ML + BW - 4, y + 5*mm, font=B, size=9,
+         color=_sc(metrics.overall_score), align="right")
 
     strong_names = [name_map[f].lower() for f, _ in strong_3]
-    weak_names = [name_map[f].lower() for f, _ in weak_3]
+    weak_names   = [name_map[f].lower() for f, _ in weak_3]
+
+    sym_raw  = metrics.details.get("eye_symmetry", 0)
+    ck_raw   = metrics.details.get("cheek_symmetry", 0)
+    m_raw    = metrics.details.get("mouth_symmetry", 0)
+    sym_val  = round((sym_raw + ck_raw + m_raw) / 30, 3)
+    sym_norm = 0.950
+
+    hw_val   = metrics.details.get("face_hw_ratio")
+    hw_norm  = 0.896
+
     impression = (
-        f"Лицо с {_level_str(metrics.overall_score).lower()} геометрией. "
-        f"Ключевые сильные стороны — {', '.join(strong_names)} — "
+        f"Лицо с <b>{_level_str(metrics.overall_score).lower()}</b> геометрией. "
+        f"Сильные стороны — {', '.join(strong_names)} — "
         f"формируют выразительный, запоминающийся образ. "
-        f"Зоны потенциала — {', '.join(weak_names)} — при грамотной работе могут "
-        f"существенно усилить общее впечатление."
+        f"Симметрия: {sym_val:.3f} при норме {sym_norm} — "
+        f"{'исключительно высокая' if sym_val >= 0.92 else 'хорошая'}. "
     )
-    _para(c, impression, ML, y, BW, 28, font=R, size=9.5, color=DIM, align=TA_JUSTIFY)
-    y += 30*mm
+    if hw_val:
+        impression += (
+            f"Пропорции лица (высота/ширина): {hw_val:.3f} при норме {hw_norm} — "
+            f"{'удлинённое, мужественное' if hw_val > hw_norm else 'компактное'} лицо. "
+        )
+    impression += (
+        f"Зоны роста — {', '.join(weak_names)} — "
+        f"при системной работе существенно усилят общее впечатление."
+    )
+
+    _para(c, impression, ML + 6, y + 9*mm, BW - 12, imp_h - 11*mm,
+          font=R, size=9, color=WHITE_TXT, align=TA_JUSTIFY, leading=13)
+    y += imp_h + 4*mm
 
     # Таблица вклада всех 20 метрик
-    _txt(c, "Все 20 метрик", ML, y, font=B, size=10, color=WHITE_TXT)
-    y += 7*mm
+    _txt(c, "Все 20 метрик", ML, y, font=B, size=9, color=WHITE_TXT)
+    y += 6*mm
 
     col_w = BW / 2 - 3*mm
     for i in range(0, 20, 2):
@@ -1037,15 +1168,15 @@ def _full_overview(c, metrics):
         s1 = _get_score(metrics, f1)
         s2 = _get_score(metrics, f2) if f2 else None
 
-        _txt(c, n1, ML, y + 3.5, font=R, size=8, color=DIM)
-        _txt(c, f"{s1:.2f}", ML + col_w - 5*mm, y + 3.5, font=B, size=8.5, color=_sc(s1))
+        _txt(c, n1, ML, y + 3, font=R, size=7.5, color=DIM)
+        _txt(c, f"{s1:.2f}", ML + col_w - 4*mm, y + 3, font=B, size=8, color=_sc(s1))
 
         if f2:
-            _txt(c, n2, ML + col_w + 6*mm, y + 3.5, font=R, size=8, color=DIM)
-            _txt(c, f"{s2:.2f}", ML + 2 * col_w + 3*mm, y + 3.5, font=B, size=8.5, color=_sc(s2))
+            _txt(c, n2, ML + col_w + 6*mm, y + 3, font=R, size=7.5, color=DIM)
+            _txt(c, f"{s2:.2f}", ML + 2 * col_w + 3*mm, y + 3, font=B, size=8, color=_sc(s2))
 
-        _hline(c, ML, y + 5*mm, BW, color=LINE, lw=0.3)
-        y += 5.5*mm
+        _hline(c, ML, y + 4.5*mm, BW, color=LINE, lw=0.3)
+        y += 5*mm
 
     _footer(c, 2, 25)
 
@@ -1068,8 +1199,9 @@ def _full_metric_page(c, metrics, metric_tuple, m_idx, page_num):
 
     norm_val = None
     your_val = None
+    norm_std  = None
     if meta_key and meta_key in FARKAS_NORMS:
-        _, norm_val, detail_key = FARKAS_NORMS[meta_key]
+        _, norm_val, detail_key, norm_std = FARKAS_NORMS[meta_key]
         if detail_key:
             your_val = metrics.details.get(detail_key)
             if your_val is None and field == "symmetry_score":
@@ -1169,26 +1301,31 @@ def _full_metric_page(c, metrics, metric_tuple, m_idx, page_num):
     # ══════════════════════════════════════════════════════════════════════════
     y += panel_h + 5*mm
 
-    _para(c, body_text, ML, y, BW, 38,
-          font=R, size=9.5, color=DIM, align=TA_JUSTIFY, leading=14)
-    y += 40*mm
+    # Генерируем динамический текст с реальными значениями
+    final_body = _build_dynamic_body(field, body_text, your_val, norm_val, norm_std, score)
+
+    _para(c, final_body, ML, y, BW, 44,
+          font=R, size=9.5, color=WHITE_TXT, align=TA_JUSTIFY, leading=14)
+    y += 47*mm
 
     # ── Блок влияния ──────────────────────────────────────────────────────────
-    infl_h = 20*mm
-    _rect(c, ML, y, BW, infl_h, fill=INFL_BG, stroke=INFL_BD, lw=0.8)
-    _txt(c, "ВЛИЯНИЕ", ML + 5, y + 4.5*mm, font=B, size=8, color=INFL_BD)
-    _para(c, influence_text, ML + 5, y + 5.5*mm, BW - 10, infl_h - 6.5*mm,
-          font=R, size=9, color=WHITE_TXT, align=TA_JUSTIFY)
+    infl_h = 22*mm
+    _rect(c, ML, y, BW, infl_h, fill=INFL_BG, stroke=INFL_BD, lw=1.2)
+    # Левый акцент-бар
+    _rect(c, ML, y, 4, infl_h, fill=INFL_BD)
+    _txt(c, "ВЛИЯНИЕ", ML + 10, y + 5*mm, font=B, size=9, color=INFL_BD)
+    _para(c, influence_text, ML + 10, y + 7*mm, BW - 15, infl_h - 9*mm,
+          font=R, size=9.5, color=WHITE_TXT, align=TA_JUSTIFY)
 
     # ── КАК УЛУЧШИТЬ ─────────────────────────────────────────────────────────
-    y += infl_h + 4*mm
+    y += infl_h + 5*mm
     advice = METRIC_ADVICE.get(field, "")
-    if advice and y < H - 45*mm:
-        _rect(c, ML, y, BW, 5.5*mm, fill=PANEL)
-        _rect(c, ML, y, 3, 5.5*mm, fill=C_HIGH)
-        _txt(c, "КАК УЛУЧШИТЬ", ML + 7, y + 3.8*mm, font=B, size=8, color=C_HIGH)
-        y += 7.5*mm
-        _para(c, advice, ML, y, BW, 28,
+    if advice and y < H - 42*mm:
+        _rect(c, ML, y, BW, 6*mm, fill=PANEL)
+        _rect(c, ML, y, 4, 6*mm, fill=C_HIGH)
+        _txt(c, "КАК УЛУЧШИТЬ", ML + 10, y + 4.2*mm, font=B, size=8.5, color=C_HIGH)
+        y += 8*mm
+        _para(c, advice, ML, y, BW, 30,
               font=R, size=9.5, color=DIM, align=TA_JUSTIFY)
 
     _footer(c, page_num, 25)
