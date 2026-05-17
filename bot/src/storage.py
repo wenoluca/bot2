@@ -82,6 +82,23 @@ def get_admin_chat_id() -> Optional[int]:
     return _load().get("admin_chat_id")
 
 
+# ── Username → chat_id mapping ────────────────────────────────────────────────
+
+def save_user_chat_id(username: str, chat_id: int):
+    """Save username → chat_id so we can notify users by username."""
+    if not username:
+        return
+    username = username.lower().lstrip("@")
+    data = _load()
+    data.setdefault("username_to_chat", {})[username] = chat_id
+    _save(data)
+
+
+def get_chat_id_by_username(username: str) -> Optional[int]:
+    username = username.lower().lstrip("@")
+    return _load().get("username_to_chat", {}).get(username)
+
+
 # ── Granted users (admin manually approves after payment) ────────────────────
 
 def grant_analysis(username: str, tier: str):
@@ -110,11 +127,13 @@ def get_grant(username: str) -> Optional[str]:
 
 # ── Broadcast list (all users who started the bot) ───────────────────────────
 
-def register_user(chat_id: int):
+def register_user(chat_id: int, username: str = ""):
     data = _load()
     known = set(data.get("user_ids", []))
     known.add(chat_id)
     data["user_ids"] = list(known)
+    if username:
+        data.setdefault("username_to_chat", {})[username.lower().lstrip("@")] = chat_id
     _save(data)
 
 

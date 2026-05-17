@@ -19,23 +19,39 @@ with open(photo_path, "rb") as f:
 real = analyze_face(img_bytes)
 annotated_image = real.landmark_image if real else None
 
-# ── Скорректированные метрики (фото не строго анфас — исправляем отклонения) ─
+# ── Скорректированные метрики для примера ────────────────────────────────────
 metrics = FaceMetrics(
-    overall_score=8.5,
+    overall_score=8.42,
     grade="S — Высокая привлекательность",
     tier="HTN",
     golden_ratio_score=8.3,
-    symmetry_score=9.2,
-    facial_thirds_score=8.0,
-    canthal_tilt_degrees=4.5,
-    canthal_tilt_score=8.5,
-    jaw_score=8.8,
-    eyes_score=8.5,
-    nose_score=7.6,
-    lips_score=7.8,
-    cheekbones_score=9.3,
-    eyebrows_score=8.2,
-    balance_score=8.5,
+    symmetry_score=9.96,
+    facial_thirds_score=9.30,
+    canthal_tilt_degrees=6.2,
+    canthal_tilt_score=9.98,
+    jaw_score=9.22,
+    eyes_score=8.15,
+    nose_score=9.98,
+    lips_score=8.80,
+    cheekbones_score=9.22,
+    eyebrows_score=7.12,
+    balance_score=9.52,
+    # Extended 20-metric scores
+    face_proportions_score=9.66,
+    vertical_balance_score=9.30,
+    eye_distance_score=2.00,
+    nose_length_score=9.47,
+    chin_length_score=9.96,
+    chin_contour_score=8.44,
+    nose_to_mouth_score=8.49,
+    biocular_score=3.73,
+    forehead_score=4.96,
+    lip_fullness_score=9.99,
+    lip_ratio_score=6.79,
+    jaw_to_mouth_score=7.79,
+    eye_shape_score=9.13,
+    brow_height_score=7.12,
+    # Raw
     face_width=232.8,
     face_height=289.6,
     upper_third=79.5,
@@ -48,16 +64,32 @@ metrics = FaceMetrics(
     interpupillary_distance=69.8,
     landmark_image=annotated_image,
     details={
-        "jaw_to_cheek_ratio":  0.748,
-        "ipd_to_face_ratio":   0.371,
-        "face_hw_ratio":       1.614,
-        "upper_third_pct":     33.2,
-        "middle_third_pct":    32.7,
-        "lower_third_pct":     34.1,
-        "eye_symmetry":        9.48,
-        "cheek_symmetry":      8.97,
-        "mouth_symmetry":      9.12,
-        "cheek_jaw_ratio":     1.337,
+        "jaw_to_cheek_ratio":   1.427,
+        "ipd_to_face_ratio":    0.300,
+        "face_hw_ratio":        0.904,
+        "upper_third_pct":      33.2,
+        "middle_third_pct":     32.7,
+        "lower_third_pct":      34.1,
+        "eye_symmetry":         9.96,
+        "cheek_symmetry":       9.80,
+        "mouth_symmetry":       9.90,
+        "cheek_jaw_ratio":      1.427,
+        "nose_to_face":         0.223,
+        "mouth_to_face":        0.392,
+        "inner_eye_to_face":    0.318,
+        "biocular_width":       0.752,
+        "forehead_ratio":       0.955,
+        "nose_len_ratio":       0.411,
+        "chin_len_ratio":       0.287,
+        "chin_contour":         0.570,
+        "nose_to_mouth":        0.570,
+        "lip_fullness":         0.345,
+        "lip_ratio":            0.576,
+        "jaw_to_mouth":         1.788,
+        "eye_shape":            0.219,
+        "brow_dist_ratio":      0.063,
+        "vert_balance":         0.697,
+        "canthal_norm":         0.138,
     },
 )
 
@@ -68,12 +100,12 @@ full_path  = os.path.join(ASSETS, "example_full.pdf")
 
 print("Генерирую краткий разбор...")
 with open(brief_path, "wb") as f:
-    f.write(generate_brief_pdf(metrics, "alex_example"))
+    f.write(generate_brief_pdf(metrics, "пример"))
 print(f"  ✓ {brief_path}")
 
 print("Генерирую полный разбор...")
 with open(full_path, "wb") as f:
-    f.write(generate_full_pdf(metrics, "alex_example"))
+    f.write(generate_full_pdf(metrics, "пример"))
 print(f"  ✓ {full_path}")
 
 print("Готово!")

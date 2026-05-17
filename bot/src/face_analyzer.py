@@ -12,10 +12,34 @@ MODEL_PATH = os.path.join(os.path.dirname(__file__), "..", "assets", "face_landm
 
 GOLDEN_RATIO = 1.618033988749895
 
+# ── Нормы Лесли Фаркаса (мужчины) ────────────────────────────────────────────
+# mean, std  для каждого параметра
+FARKAS = {
+    "face_hw_ratio":        (0.896, 0.035),  # высота/ширина лица
+    "vertical_balance":     (0.728, 0.042),  # средняя треть / нижняя треть
+    "cheek_jaw":            (1.356, 0.095),  # скулы / челюсть
+    "eye_to_face":          (0.223, 0.018),  # ширина глаза / ширина лица
+    "inner_eye_to_face":    (0.271, 0.022),  # расстояние между внутр. углами / ширина
+    "canthal_tilt":         (0.036, 0.025),  # нормализованный наклон (tilt/eye_w)
+    "nose_to_face":         (0.234, 0.021),  # ширина носа / ширина лица
+    "mouth_to_face":        (0.403, 0.028),  # ширина рта / ширина лица
+    "nose_length":          (0.421, 0.032),  # длина носа / высота лица
+    "chin_length":          (0.283, 0.020),  # длина подбородка / высота лица
+    "chin_contour":         (0.630, 0.060),  # угол сужения подбородка
+    "nose_to_mouth":        (0.583, 0.042),  # ширина носа / ширина рта
+    "biocular_width":       (0.713, 0.050),  # межкантальная ширина / ширина лица
+    "forehead_width":       (0.919, 0.055),  # ширина лба / ширина лица
+    "lip_fullness":         (0.347, 0.028),  # высота губ / ширина рта
+    "lip_ratio":            (0.639, 0.065),  # верхняя губа / нижняя губа
+    "jaw_to_mouth":         (1.810, 0.140),  # ширина челюсти / ширина рта
+    "eye_shape":            (0.285, 0.025),  # высота/ширина глаза
+    "brow_height":          (0.063, 0.012),  # расстояние бровь-глаз / высота лица
+}
+
 
 @dataclass
 class FaceMetrics:
-    # Core scores
+    # Core scores (old API — kept for compatibility)
     golden_ratio_score: float = 0.0
     symmetry_score: float = 0.0
     facial_thirds_score: float = 0.0
@@ -26,13 +50,29 @@ class FaceMetrics:
     grade: str = "N/A"
     tier: str = "MTN"
 
-    # Extra key-parameter scores
+    # Extra scores
     eyes_score: float = 0.0
     nose_score: float = 0.0
     lips_score: float = 0.0
     cheekbones_score: float = 0.0
     eyebrows_score: float = 0.0
     balance_score: float = 0.0
+
+    # Extended 20-metric scores
+    face_proportions_score: float = 0.0      # H/W ratio
+    vertical_balance_score: float = 0.0     # средняя/нижняя трети
+    eye_distance_score: float = 0.0          # расстояние между глазами
+    nose_length_score: float = 0.0           # длина носа
+    chin_length_score: float = 0.0           # длина подбородка
+    chin_contour_score: float = 0.0          # контур подбородка
+    nose_to_mouth_score: float = 0.0         # нос к ширине рта
+    biocular_score: float = 0.0              # биокулярная ширина
+    forehead_score: float = 0.0              # ширина лба
+    lip_fullness_score: float = 0.0          # полнота губ
+    lip_ratio_score: float = 0.0             # пропорции губ
+    jaw_to_mouth_score: float = 0.0          # челюсть к ширине рта
+    eye_shape_score: float = 0.0             # форма глаз
+    brow_height_score: float = 0.0           # высота бровей
 
     # Raw measurements (pixels)
     face_width: float = 0.0
@@ -58,17 +98,35 @@ def _midpoint(p1, p2):
     return ((p1[0] + p2[0]) / 2, (p1[1] + p2[1]) / 2)
 
 
-def _ratio_score(value, ideal, tolerance=0.15):
-    dev = abs(value - ideal) / ideal
-    return round(max(0.0, 10.0 - dev / tolerance * 5.0), 2)
+def _sigma_score(value, mean, std, direction="both", min_score=2.0):
+    """
+    Оценка 2–10 по числу σ от нормы.
+    direction='both'  — штраф в обе стороны от нормы
+    direction='up'    — штраф только за значения НИЖЕ нормы (высокие значения хорошо)
+    direction='down'  — штраф только за значения ВЫШЕ нормы (низкие значения хорошо)
+    """
+    if std == 0:
+        return 10.0
+    z = (value - mean) / std
+
+    if direction == "both":
+        dev = abs(z)
+    elif direction == "up":
+        dev = max(0.0, -z)   # штраф когда значение ниже нормы
+    else:
+        dev = max(0.0, z)    # штраф когда значение выше нормы
+
+    # Плавное снижение: каждый σ отнимает ~1.5 балла
+    score = 10.0 - dev * 1.5
+    return round(max(min_score, min(10.0, score)), 2)
 
 
 def _golden_ratio_score(a, b):
     if b == 0:
-        return 0.0
+        return 5.0
     ratio = max(a, b) / min(a, b)
     deviation = abs(ratio - GOLDEN_RATIO)
-    return round(max(0.0, 10.0 - deviation * 10.0), 2)
+    return round(max(2.0, 10.0 - deviation * 8.0), 2)
 
 
 def _get_tier(score: float) -> str:
@@ -135,135 +193,228 @@ def analyze_face(image_bytes: bytes) -> Optional[FaceMetrics]:
         return (lm.x * w, lm.y * h)
 
     # ── Основные ориентиры ───────────────────────────────────────────────────
-    left_cheek = pt(234)
+    left_cheek  = pt(234)
     right_cheek = pt(454)
-    face_width = _dist(left_cheek, right_cheek)
+    face_width  = _dist(left_cheek, right_cheek)
 
-    chin = pt(152)
+    chin     = pt(152)
     forehead = pt(10)
     face_height = _dist(chin, forehead)
 
-    # ── Золотое сечение ──────────────────────────────────────────────────────
-    golden_ratio_score = _golden_ratio_score(face_height, face_width)
+    if face_width < 10 or face_height < 10:
+        return None
 
-    # ── Трети лица ──────────────────────────────────────────────────────────
-    brow_line = _midpoint(pt(107), pt(336))
-    nose_base = pt(2)
-
-    upper_third = _dist(forehead, brow_line)
-    middle_third = _dist(brow_line, nose_base)
-    lower_third = _dist(nose_base, chin)
-    total_thirds = upper_third + middle_third + lower_third
-    ideal_third = total_thirds / 3.0
-
-    thirds_deviation = (
-        abs(upper_third - ideal_third)
-        + abs(middle_third - ideal_third)
-        + abs(lower_third - ideal_third)
-    ) / total_thirds
-    thirds_score = round(max(0.0, 10.0 - thirds_deviation * 30.0), 2)
-
-    # ── Симметрия ────────────────────────────────────────────────────────────
-    nose_cx = pt(4)[0]
-
-    left_eye_outer = pt(33)
-    left_eye_inner = pt(133)
+    # ── Глаза ────────────────────────────────────────────────────────────────
+    left_eye_outer  = pt(33)
+    left_eye_inner  = pt(133)
     right_eye_inner = pt(362)
     right_eye_outer = pt(263)
 
-    left_eye_width = _dist(left_eye_outer, left_eye_inner)
+    left_eye_width  = _dist(left_eye_outer, left_eye_inner)
     right_eye_width = _dist(right_eye_inner, right_eye_outer)
+    avg_eye_width   = (left_eye_width + right_eye_width) / 2.0
+
+    left_pupil  = _midpoint(pt(33), pt(133))
+    right_pupil = _midpoint(pt(362), pt(263))
+    ipd = _dist(left_pupil, right_pupil)
+
+    # Высота глаза (верхнее и нижнее веко)
+    left_eye_top    = pt(159)
+    left_eye_bottom = pt(145)
+    left_eye_height = _dist(left_eye_top, left_eye_bottom)
+
+    # ── Нос ──────────────────────────────────────────────────────────────────
+    nose_tip  = pt(4)
+    nose_base = pt(2)
+    nose_width = _dist(pt(129), pt(358))
+    nose_length = _dist(pt(6), nose_base)   # переносица → основание носа
+
+    # ── Рот ──────────────────────────────────────────────────────────────────
+    mouth_left  = pt(61)
+    mouth_right = pt(291)
+    mouth_width = _dist(mouth_left, mouth_right)
+
+    # Губы: высота верхней и нижней
+    upper_lip_top    = pt(0)    # верх верхней губы
+    upper_lip_bottom = pt(13)   # низ верхней губы
+    lower_lip_top    = pt(14)   # верх нижней губы
+    lower_lip_bottom = pt(17)   # низ нижней губы
+
+    upper_lip_h = _dist(upper_lip_top, upper_lip_bottom)
+    lower_lip_h = _dist(lower_lip_top, lower_lip_bottom)
+    total_lip_h = upper_lip_h + lower_lip_h
+
+    # ── Скулы и челюсть ──────────────────────────────────────────────────────
+    jaw_left  = pt(172)
+    jaw_right = pt(397)
+    jaw_width = _dist(jaw_left, jaw_right)
+
+    chin_narrow_left  = pt(175)
+    chin_narrow_right = pt(396)
+
+    # ── Брови ────────────────────────────────────────────────────────────────
+    brow_line  = _midpoint(pt(107), pt(336))
+    brow_top_l = pt(107)
+    eye_top_l  = pt(159)
+
+    # ── Лоб ──────────────────────────────────────────────────────────────────
+    forehead_left  = pt(103)
+    forehead_right = pt(332)
+    forehead_width = _dist(forehead_left, forehead_right)
+
+    # ── Трети лица ──────────────────────────────────────────────────────────
+    upper_third  = _dist(forehead, brow_line)
+    middle_third = _dist(brow_line, nose_base)
+    lower_third  = _dist(nose_base, chin)
+    total_thirds = upper_third + middle_third + lower_third
+
+    # ── Симметрия ────────────────────────────────────────────────────────────
+    nose_cx = nose_tip[0]
+
     eye_sym = 1 - abs(left_eye_width - right_eye_width) / max(left_eye_width, right_eye_width, 1)
 
-    left_ck = abs(left_cheek[0] - nose_cx)
+    left_ck  = abs(left_cheek[0]  - nose_cx)
     right_ck = abs(right_cheek[0] - nose_cx)
     cheek_sym = 1 - abs(left_ck - right_ck) / max(left_ck, right_ck, 1)
 
-    mouth_left = pt(61)
-    mouth_right = pt(291)
-    m_left_d = abs(mouth_left[0] - nose_cx)
+    m_left_d  = abs(mouth_left[0]  - nose_cx)
     m_right_d = abs(mouth_right[0] - nose_cx)
     mouth_sym = 1 - abs(m_left_d - m_right_d) / max(m_left_d, m_right_d, 1)
 
-    symmetry_score = round(((eye_sym + cheek_sym + mouth_sym) / 3) * 10.0, 2)
+    symmetry_raw = (eye_sym + cheek_sym + mouth_sym) / 3.0
+    symmetry_score = round(max(2.0, min(10.0, symmetry_raw * 10.0 + 0.5)), 2)
 
-    # ── Кантальный тильт ─────────────────────────────────────────────────────
-    left_tilt = math.degrees(math.atan2(
-        left_eye_inner[1] - left_eye_outer[1],
-        left_eye_outer[0] - left_eye_inner[0],
-    ))
-    right_tilt = math.degrees(math.atan2(
-        right_eye_inner[1] - right_eye_outer[1],
-        right_eye_outer[0] - right_eye_inner[0],
-    ))
-    canthal_tilt_degrees = round((left_tilt + right_tilt) / 2, 2)
+    # ── Кантальный тильт (по нормализованному значению) ─────────────────────
+    # Вектор от outer к inner для ЛЕВОГО глаза в пространстве (y вверх → negate image y)
+    dx_l = left_eye_inner[0] - left_eye_outer[0]
+    dy_l = -(left_eye_inner[1] - left_eye_outer[1])   # flip y for math coords
+    left_tilt_rad = math.atan2(dy_l, dx_l)
 
-    if 5 <= canthal_tilt_degrees <= 15:
-        canthal_tilt_score = 10.0
-    elif canthal_tilt_degrees > 0:
-        canthal_tilt_score = max(0.0, 7.0 + canthal_tilt_degrees * 0.6)
-    else:
-        canthal_tilt_score = max(0.0, 7.0 + canthal_tilt_degrees * 0.5)
-    canthal_tilt_score = round(min(10.0, canthal_tilt_score), 2)
+    dx_r = right_eye_inner[0] - right_eye_outer[0]
+    dy_r = -(right_eye_inner[1] - right_eye_outer[1])
+    right_tilt_rad = math.atan2(dy_r, abs(dx_r))
 
-    # ── Челюсть ──────────────────────────────────────────────────────────────
-    jaw_width = _dist(pt(172), pt(397))
-    jaw_to_cheek = jaw_width / face_width if face_width > 0 else 0
-    jaw_score = round(max(0.0, 10.0 - abs(jaw_to_cheek - 0.75) * 30.0), 2)
+    canthal_tilt_degrees = round(math.degrees((left_tilt_rad + right_tilt_rad) / 2), 2)
 
-    # ── IPD и нос ────────────────────────────────────────────────────────────
-    left_pupil = _midpoint(pt(33), pt(133))
-    right_pupil = _midpoint(pt(362), pt(263))
-    ipd = _dist(left_pupil, right_pupil)
-    ipd_ratio = ipd / face_width if face_width > 0 else 0
+    # Нормализованный тильт (наклон / ширина глаза) для Farkas
+    canthal_norm = math.tan(math.radians(abs(canthal_tilt_degrees))) if avg_eye_width > 0 else 0
+    canthal_norm = canthal_norm if canthal_tilt_degrees >= 0 else -canthal_norm
 
-    nose_width = _dist(pt(129), pt(358))
-    mouth_width = _dist(mouth_left, mouth_right)
+    # Положительный тильт (hunter eyes) награждается
+    canthal_tilt_score = _sigma_score(canthal_norm, FARKAS["canthal_tilt"][0],
+                                      FARKAS["canthal_tilt"][1], direction="up")
 
-    # ── Дополнительные метрики ───────────────────────────────────────────────
-    # Глаза: ширина глаза ≈ 1/5 ширины лица
-    ideal_eye_w = face_width / 5.0
-    left_dev = abs(left_eye_width - ideal_eye_w) / ideal_eye_w
-    right_dev = abs(right_eye_width - ideal_eye_w) / ideal_eye_w
-    eyes_score = round(max(0.0, 10.0 - (left_dev + right_dev) * 12.0), 2)
+    # ── Все соотношения для оценки ────────────────────────────────────────────
+    hw_ratio         = face_height / face_width
+    vert_balance     = middle_third / lower_third if lower_third > 0 else 0.728
+    cheek_jaw_ratio  = face_width / jaw_width if jaw_width > 0 else 1.356
+    eye_to_face      = avg_eye_width / face_width
+    inner_eye_to_face = _dist(left_eye_inner, right_eye_inner) / face_width
+    nose_to_face     = nose_width / face_width
+    mouth_to_face    = mouth_width / face_width
+    nose_len_ratio   = nose_length / face_height
+    chin_len_ratio   = _dist(lower_lip_bottom, chin) / face_height
 
-    # Нос: ширина носа ≈ 1/5 ширины лица
-    nose_dev = abs(nose_width - face_width / 5.0) / (face_width / 5.0)
-    nose_score = round(max(0.0, 10.0 - nose_dev * 14.0), 2)
+    chin_narrow_w    = _dist(chin_narrow_left, chin_narrow_right)
+    chin_contour     = chin_narrow_w / jaw_width if jaw_width > 0 else 0.630
 
-    # Губы: ширина рта ≈ IPD (межзрачковое расстояние)
-    lips_ratio = mouth_width / ipd if ipd > 0 else 1.0
-    lips_score = round(max(0.0, 10.0 - abs(lips_ratio - 1.0) * 14.0), 2)
+    nose_to_mouth    = nose_width / mouth_width if mouth_width > 0 else 0.583
+    biocular_width   = _dist(left_eye_outer, right_eye_outer) / face_width
+    forehead_ratio   = forehead_width / face_width
 
-    # Скулы: ширина скул / ширина челюсти ≈ 1.25–1.35
-    cheek_jaw = face_width / jaw_width if jaw_width > 0 else 1.0
-    cheekbones_score = round(max(0.0, 10.0 - abs(cheek_jaw - 1.30) * 20.0), 2)
+    lip_fullness     = total_lip_h / mouth_width if mouth_width > 0 else 0.347
+    lip_ratio        = upper_lip_h / lower_lip_h if lower_lip_h > 0 else 0.639
+    jaw_to_mouth_r   = jaw_width / mouth_width if mouth_width > 0 else 1.810
 
-    # Брови: расстояние бровь-глаз / высота лица ≈ 0.055–0.075
-    brow_top = pt(107)
-    eye_top = pt(159)
-    brow_dist_ratio = _dist(brow_top, eye_top) / face_height if face_height > 0 else 0
-    eyebrows_score = round(max(0.0, 10.0 - abs(brow_dist_ratio - 0.065) * 120.0), 2)
+    eye_shape_r      = left_eye_height / left_eye_width if left_eye_width > 0 else 0.285
+    brow_dist_r      = _dist(brow_top_l, eye_top_l) / face_height if face_height > 0 else 0.063
 
-    # Баланс: средняя по трём опорным пропорциям
-    balance_score = round((golden_ratio_score + symmetry_score + thirds_score) / 3.0, 2)
+    thirds_dev = (
+        abs(upper_third - total_thirds / 3)
+        + abs(middle_third - total_thirds / 3)
+        + abs(lower_third - total_thirds / 3)
+    ) / total_thirds
+    thirds_score = round(max(2.0, 10.0 - thirds_dev * 25.0), 2)
 
-    # ── Итоговый балл ────────────────────────────────────────────────────────
-    overall = round(
-        golden_ratio_score * 0.20
-        + symmetry_score * 0.20
-        + thirds_score * 0.15
-        + canthal_tilt_score * 0.15
-        + jaw_score * 0.10
-        + eyes_score * 0.07
-        + nose_score * 0.05
-        + lips_score * 0.04
-        + cheekbones_score * 0.04,
-        2,
+    # ── Оценки по всем метрикам ───────────────────────────────────────────────
+    golden_ratio_score      = _golden_ratio_score(face_height, face_width)
+    face_proportions_score  = _sigma_score(hw_ratio,       *FARKAS["face_hw_ratio"])
+    vertical_balance_score  = _sigma_score(vert_balance,   *FARKAS["vertical_balance"])
+    cheekbones_score        = _sigma_score(cheek_jaw_ratio,*FARKAS["cheek_jaw"])
+    eyes_score              = _sigma_score(eye_to_face,    *FARKAS["eye_to_face"])
+    eye_distance_score      = _sigma_score(inner_eye_to_face, *FARKAS["inner_eye_to_face"])
+    nose_score              = _sigma_score(nose_to_face,   *FARKAS["nose_to_face"])
+    lips_score              = _sigma_score(mouth_to_face,  *FARKAS["mouth_to_face"])
+    nose_length_score       = _sigma_score(nose_len_ratio, *FARKAS["nose_length"])
+    chin_length_score       = _sigma_score(chin_len_ratio, *FARKAS["chin_length"])
+    chin_contour_score      = _sigma_score(chin_contour,   *FARKAS["chin_contour"])
+    nose_to_mouth_score     = _sigma_score(nose_to_mouth,  *FARKAS["nose_to_mouth"])
+    biocular_score          = _sigma_score(biocular_width, *FARKAS["biocular_width"])
+    forehead_score          = _sigma_score(forehead_ratio, *FARKAS["forehead_width"])
+    lip_fullness_score      = _sigma_score(lip_fullness,   *FARKAS["lip_fullness"])
+    lip_ratio_score         = _sigma_score(lip_ratio,      *FARKAS["lip_ratio"])
+    jaw_to_mouth_score      = _sigma_score(jaw_to_mouth_r, *FARKAS["jaw_to_mouth"])
+    eye_shape_score         = _sigma_score(eye_shape_r,    *FARKAS["eye_shape"])
+    brow_height_score       = _sigma_score(brow_dist_r,    *FARKAS["brow_height"])
+
+    jaw_score = _sigma_score(cheek_jaw_ratio, *FARKAS["cheek_jaw"])
+
+    eyebrows_score = brow_height_score
+    balance_score  = round((golden_ratio_score + symmetry_score + thirds_score) / 3.0, 2)
+
+    # ── Итоговый балл (взвешенное среднее 20 метрик) ─────────────────────────
+    weights = {
+        "symmetry":         0.12,
+        "proportions":      0.08,
+        "thirds":           0.07,
+        "canthal":          0.10,
+        "cheekbones":       0.08,
+        "eyes":             0.06,
+        "eye_distance":     0.05,
+        "nose":             0.05,
+        "mouth":            0.05,
+        "nose_length":      0.04,
+        "chin_length":      0.05,
+        "chin_contour":     0.04,
+        "nose_to_mouth":    0.04,
+        "biocular":         0.04,
+        "forehead":         0.03,
+        "lip_fullness":     0.03,
+        "lip_ratio":        0.02,
+        "jaw_to_mouth":     0.03,
+        "eye_shape":        0.05,
+        "brow":             0.03,
+        "golden_ratio":     0.03,
+    }
+    weighted = (
+        symmetry_score          * weights["symmetry"]
+        + face_proportions_score * weights["proportions"]
+        + thirds_score           * weights["thirds"]
+        + canthal_tilt_score     * weights["canthal"]
+        + cheekbones_score       * weights["cheekbones"]
+        + eyes_score             * weights["eyes"]
+        + eye_distance_score     * weights["eye_distance"]
+        + nose_score             * weights["nose"]
+        + lips_score             * weights["mouth"]
+        + nose_length_score      * weights["nose_length"]
+        + chin_length_score      * weights["chin_length"]
+        + chin_contour_score     * weights["chin_contour"]
+        + nose_to_mouth_score    * weights["nose_to_mouth"]
+        + biocular_score         * weights["biocular"]
+        + forehead_score         * weights["forehead"]
+        + lip_fullness_score     * weights["lip_fullness"]
+        + lip_ratio_score        * weights["lip_ratio"]
+        + jaw_to_mouth_score     * weights["jaw_to_mouth"]
+        + eye_shape_score        * weights["eye_shape"]
+        + brow_height_score      * weights["brow"]
+        + golden_ratio_score     * weights["golden_ratio"]
     )
+    # normalize since weights sum > 1 due to golden_ratio extra
+    weight_total = sum(weights.values())
+    overall = round(max(2.0, min(10.0, weighted / weight_total * 10.0 / 9.5)), 2)
 
     grade = _get_grade(overall)
-    tier = _get_tier(overall)
+    tier  = _get_tier(overall)
 
     # ── Аннотированное фото ──────────────────────────────────────────────────
     annotated = img.copy()
@@ -284,8 +435,24 @@ def analyze_face(image_bytes: bytes) -> Optional[FaceMetrics]:
         nose_score=nose_score,
         lips_score=lips_score,
         cheekbones_score=cheekbones_score,
-        eyebrows_score=eyebrows_score,
+        eyebrows_score=brow_height_score,
         balance_score=balance_score,
+        # Extended
+        face_proportions_score=face_proportions_score,
+        vertical_balance_score=vertical_balance_score,
+        eye_distance_score=eye_distance_score,
+        nose_length_score=nose_length_score,
+        chin_length_score=chin_length_score,
+        chin_contour_score=chin_contour_score,
+        nose_to_mouth_score=nose_to_mouth_score,
+        biocular_score=biocular_score,
+        forehead_score=forehead_score,
+        lip_fullness_score=lip_fullness_score,
+        lip_ratio_score=lip_ratio_score,
+        jaw_to_mouth_score=jaw_to_mouth_score,
+        eye_shape_score=eye_shape_score,
+        brow_height_score=brow_height_score,
+        # Raw
         face_width=round(face_width, 1),
         face_height=round(face_height, 1),
         upper_third=round(upper_third, 1),
@@ -297,16 +464,32 @@ def analyze_face(image_bytes: bytes) -> Optional[FaceMetrics]:
         nose_width=round(nose_width, 1),
         interpupillary_distance=round(ipd, 1),
         details={
-            "jaw_to_cheek_ratio": round(jaw_to_cheek, 3),
-            "ipd_to_face_ratio": round(ipd_ratio, 3),
-            "face_hw_ratio": round(face_height / face_width, 3) if face_width > 0 else 0,
-            "upper_third_pct": round(upper_third / total_thirds * 100, 1),
-            "middle_third_pct": round(middle_third / total_thirds * 100, 1),
-            "lower_third_pct": round(lower_third / total_thirds * 100, 1),
-            "eye_symmetry": round(eye_sym * 10, 2),
-            "cheek_symmetry": round(cheek_sym * 10, 2),
-            "mouth_symmetry": round(mouth_sym * 10, 2),
-            "cheek_jaw_ratio": round(cheek_jaw, 3),
+            "jaw_to_cheek_ratio":   round(cheek_jaw_ratio, 3),
+            "ipd_to_face_ratio":    round(ipd / face_width, 3),
+            "face_hw_ratio":        round(hw_ratio, 3),
+            "upper_third_pct":      round(upper_third / total_thirds * 100, 1),
+            "middle_third_pct":     round(middle_third / total_thirds * 100, 1),
+            "lower_third_pct":      round(lower_third / total_thirds * 100, 1),
+            "eye_symmetry":         round(eye_sym * 10, 2),
+            "cheek_symmetry":       round(cheek_sym * 10, 2),
+            "mouth_symmetry":       round(mouth_sym * 10, 2),
+            "cheek_jaw_ratio":      round(cheek_jaw_ratio, 3),
+            "nose_to_face":         round(nose_to_face, 3),
+            "mouth_to_face":        round(mouth_to_face, 3),
+            "inner_eye_to_face":    round(inner_eye_to_face, 3),
+            "biocular_width":       round(biocular_width, 3),
+            "forehead_ratio":       round(forehead_ratio, 3),
+            "nose_len_ratio":       round(nose_len_ratio, 3),
+            "chin_len_ratio":       round(chin_len_ratio, 3),
+            "chin_contour":         round(chin_contour, 3),
+            "nose_to_mouth":        round(nose_to_mouth, 3),
+            "lip_fullness":         round(lip_fullness, 3),
+            "lip_ratio":            round(lip_ratio, 3),
+            "jaw_to_mouth":         round(jaw_to_mouth_r, 3),
+            "eye_shape":            round(eye_shape_r, 3),
+            "brow_dist_ratio":      round(brow_dist_r, 3),
+            "vert_balance":         round(vert_balance, 3),
+            "canthal_norm":         round(canthal_norm, 3),
         },
         landmark_image=buf.tobytes(),
     )
@@ -333,7 +516,6 @@ def _draw_overlay(img, lms, w, h, score, tier):
                400,377,152,148,176,149,150,136,172,58,132,93,234,127,162,21,54,103,67,109,10]
     cv2.polylines(img, [np.array([pt(i) for i in jaw_idx], np.int32)], False, GOLD, 1)
 
-    # Watermark only — score is shown in the PDF, not baked into the image
     overlay = img.copy()
     cv2.rectangle(overlay, (0, 0), (145, 28), (0, 0, 0), -1)
     img[:] = cv2.addWeighted(overlay, 0.55, img, 0.45, 0)

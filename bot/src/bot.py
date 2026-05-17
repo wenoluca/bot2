@@ -24,6 +24,7 @@ from storage import (
     save_admin_chat_id, get_admin_chat_id,
     grant_analysis, consume_grant, get_grant,
     register_user, get_all_user_ids,
+    save_user_chat_id, get_chat_id_by_username,
 )
 
 logging.basicConfig(
@@ -79,48 +80,91 @@ ABOUT_TEXT = (
     "📏 <b>Три трети лица</b> — лоб, нос и подбородок\n"
     "👁 <b>Кантальный тильт</b> — угол глазной оси\n"
     "💪 <b>Линия челюсти</b> — соотношение челюсти и скул\n"
-    "➕ И ещё 6 метрик по нормам Лесли Фаркаса\n\n"
+    "➕ И ещё 15 метрик по нормам Лесли Фаркаса\n\n"
     "<i>Только для развлечения. Красота субъективна.</i>"
 )
 
-BRIEF_TEXT = (
+ANALYZE_TEXT = (
     "📍 <b>Главное меню  ›  Выбор тарифа</b>\n\n"
     "<blockquote>"
+    "🔬 После разбора ты поймёшь:\n\n"
+    "— какие сильные стороны твоей внешности уже являются опорой и как их вывести на первый план;\n\n"
+    "— какие зоны заметнее всего ослабляют общее впечатление и как их можно скорректировать;\n\n"
+    "— в каком направлении двигаться дальше, чтобы выжать максимум из своей внешности."
+    "</blockquote>"
+)
+
+BRIEF_TEXT = (
+    "📍 <b>Главное меню  ›  Выбор тарифа  ›  Оплата</b>\n\n"
+    "<blockquote>"
     "⚜️ <b>План</b>  —  Краткий разбор\n\n"
-    "💰 <b>Цена</b>  —  199 ₽"
+    "💰 <b>Цена</b>  —  490 ₽"
     "</blockquote>\n\n"
-    "📚 <b>Что входит:</b>\n"
-    "🔸 Итоговый балл и тир (LTN / MTN / HTN)\n"
-    "🔸 8 ключевых параметров лица\n"
-    "🔸 Аннотированное фото с разметкой\n"
-    "🔸 PDF-отчёт со шкалой оценок\n\n"
-    "━━━━━━━━━━━━━━━━━━━━━\n"
-    "💡 После оплаты свяжитесь с @facedex_support, "
-    "чтобы получить разбор. Готовый PDF за <b>1 мин</b> ⚡"
+    "📚 <b>Что входит в один разбор:</b>\n\n"
+    "<blockquote>"
+    "🔸 <b>Итоговая оценка гармонии:</b>\n"
+    "математический балл по геометрии лица — насколько твои пропорции близки к норме.\n\n"
+    "🔸 <b>Тир по looksmaxing-шкале:</b>\n"
+    "LTN, MTN или HTN — твоя категория внешности.\n\n"
+    "🔸 <b>Оценка по ключевым параметрам:</b>\n"
+    "глаза, нос, губы, скулы, челюсть, брови, симметрия и баланс — где у тебя сильные стороны и где оценка проседает."
+    "</blockquote>\n\n"
+    "💡 <b>После оплаты:</b>\n\n"
+    "<blockquote>"
+    "Просто отправь фото в этот чат —\n"
+    "бот автоматически начнёт разбор.\n\n"
+    "Готовый PDF-отчёт получишь за 4 минуты."
+    "</blockquote>"
 )
 
 FULL_TEXT = (
-    "📍 <b>Главное меню  ›  Выбор тарифа</b>\n\n"
+    "📍 <b>Главное меню  ›  Выбор тарифа  ›  Оплата</b>\n\n"
     "<blockquote>"
     "⚜️ <b>План</b>  —  Полный разбор\n\n"
-    "💰 <b>Цена</b>  —  499 ₽"
+    "💰 <b>Цена</b>  —  990 ₽"
     "</blockquote>\n\n"
-    "📚 <b>Что входит:</b>\n"
-    "🔹 11 метрик по нормам Лесли Фаркаса\n"
-    "🔹 Таблица измерений с идеальными значениями\n"
-    "🔹 Аннотированное фото с разметкой 98 точек\n"
-    "🔹 Персональные советы: причёска, уход, мьюинг\n"
-    "🔹 Полный PDF-отчёт\n\n"
-    "━━━━━━━━━━━━━━━━━━━━━\n"
-    "💡 После оплаты свяжитесь с @facedex_support, "
-    "чтобы получить разбор. Готовый PDF за <b>2 мин</b> ⚡"
+    "📚 <b>Что входит в один разбор:</b>\n\n"
+    "<blockquote>"
+    "🔹 <b>Персональный PDF-отчёт на 25 страниц:</b>\n"
+    "полный анализ лица; итоговая оценка гармонии, диаграмма со всеми метриками и визуализация пропорций.\n\n"
+    "🔹 <b>Разбор 20 ключевых метрик лица:</b>\n"
+    "пропорции твоего лица сравниваются с нормативными значениями из исследования лицевой антропометрии Лесли Фаркаса.\n\n"
+    "🔹 <b>Наглядная визуализация измерений:</b>\n"
+    "на твоё лицо накладываются 98 ключевых точек, все отрезки и соотношения, по которым считаются пропорции.\n\n"
+    "🔹 <b>Понятное объяснение каждой метрики:</b>\n"
+    "что именно измеряется, какое значение получилось и как этот показатель влияет на гармонию твоего лица.\n\n"
+    "🔹 <b>Конкретные шаги по улучшению:</b>\n"
+    "5 советов по самым слабым метрикам и 2 — по уходу; мы расскажем, что менять в первую очередь и что даст максимальный эффект."
+    "</blockquote>\n\n"
+    "💡 <b>После оплаты:</b>\n\n"
+    "<blockquote>"
+    "Просто отправь фото в этот чат —\n"
+    "бот автоматически начнёт разбор.\n\n"
+    "Готовый PDF-отчёт получишь за 4 минуты."
+    "</blockquote>"
 )
 
-WAITING_TEXT = (
-    "📩 <b>Фото получено!</b>\n\n"
-    "Отправьте фото после того как свяжетесь с поддержкой (@facedex_support) "
-    "и получите разрешение. Разбор будет выполнен вручную — это гарантирует качество.\n\n"
-    "После оплаты: просто напишите @facedex_support и вам активируют разбор 🚀"
+GRANT_TEXT = (
+    "<blockquote>Вы получили +1 разбор.</blockquote>\n\n"
+    "⚙️ <b>Чтобы разбор был максимально точным:</b>\n\n"
+    "<blockquote>"
+    "🔹 Фото КАК НА ПАСПОРТ.\n\n"
+    "🔹 Смотрите прямо в камеру.\n\n"
+    "🔹 Держите голову ровно — без наклонов и поворотов.\n\n"
+    "🔹 Не наклоняйте голову к плечу.\n\n"
+    "🔹 Уберите волосы с лица — лоб полностью открыт.\n\n"
+    "🔹 Сохраняйте нейтральное выражение лица.\n\n"
+    "🔹 Обеспечьте ровное освещение без теней.\n\n"
+    "🔹 Используйте чёткое фото без размытия."
+    "</blockquote>\n\n"
+    "‼️ <b>ОБЯЗАТЕЛЬНО К ПРОЧТЕНИЮ:</b>\n\n"
+    "<blockquote>"
+    "🔸 ЛИЦО СМОТРИТ СТРОГО ПРЯМО В КАМЕРУ (НЕ ПРОФИЛЬ).\n\n"
+    "🔸 Обеспечьте хотя-бы небольшой контраст между подбородком и шеей.\n\n"
+    "🔸 Если что-то пошло не так — пишите в техподдержку, мы ОБЯЗАТЕЛЬНО ПОМОЖЕМ! 🤝"
+    "</blockquote>\n\n"
+    "Просто отправьте фото в ЭТОТ чат —\n"
+    "бот автоматически начнёт разбор."
 )
 
 
@@ -133,8 +177,8 @@ def kb_main():
 
 def kb_plans():
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton("📋  Краткий разбор  —  199 ₽", callback_data="plan_brief")],
-        [InlineKeyboardButton("📊  Полный разбор  —  499 ₽",  callback_data="plan_full")],
+        [InlineKeyboardButton("📋  Краткий разбор  —  490 ₽", callback_data="plan_brief")],
+        [InlineKeyboardButton("📊  Полный разбор  —  990 ₽",  callback_data="plan_full")],
         [InlineKeyboardButton("◀️  Назад",                     callback_data="menu_main")],
     ])
 
@@ -164,7 +208,9 @@ def kb_home():
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
-    register_user(update.effective_chat.id)
+    register_user(update.effective_chat.id, user.username or "")
+    if user.username:
+        save_user_chat_id(user.username, update.effective_chat.id)
     if _is_admin(user):
         save_admin_chat_id(update.effective_chat.id)
         logger.info(f"Admin chat_id: {update.effective_chat.id}")
@@ -175,16 +221,18 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def _send_example_pdfs(chat_id: int, context: ContextTypes.DEFAULT_TYPE):
-    for fname, caption in [
-        ("example_brief.pdf", "📋 <b>Краткий разбор</b> — пример отчёта (199 ₽)"),
-        ("example_full.pdf",  "📊 <b>Полный разбор</b> — пример отчёта (499 ₽)"),
+    for fname, caption, display_name in [
+        ("example_brief.pdf", "📋 <b>Краткий разбор</b> — пример отчёта (490 ₽)",
+         "Краткий разбор — пример.pdf"),
+        ("example_full.pdf",  "📊 <b>Полный разбор</b> — пример отчёта (990 ₽)",
+         "Полный разбор — пример.pdf"),
     ]:
         path = os.path.join(ASSETS_DIR, fname)
         if os.path.exists(path):
             with open(path, "rb") as f:
                 await context.bot.send_document(
                     chat_id, document=f,
-                    filename=fname.replace("_", " ").replace(".pdf", " — пример.pdf"),
+                    filename=display_name,
                     caption=caption, parse_mode=ParseMode.HTML)
 
 
@@ -202,11 +250,7 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                                       reply_markup=kb_main())
     elif d == "menu_analyze":
         await query.edit_message_text(
-            "🔬 <b>Выбери формат разбора:</b>\n\n"
-            "<blockquote>"
-            "📋 <b>Краткий</b> — балл, тир, 8 параметров\n"
-            "📊 <b>Полный</b> — 11 метрик, нормы Фаркаса, советы"
-            "</blockquote>",
+            ANALYZE_TEXT,
             parse_mode=ParseMode.HTML, reply_markup=kb_plans())
     elif d == "plan_brief":
         await query.edit_message_text(BRIEF_TEXT, parse_mode=ParseMode.HTML,
@@ -233,7 +277,7 @@ async def cmd_grant(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("⛔ Эта команда только для администратора.")
         return
 
-    args = context.args  # list of strings after /grant
+    args = context.args
     if len(args) < 2:
         await update.message.reply_text(
             "Использование: /grant @username brief|full\n\n"
@@ -253,8 +297,25 @@ async def cmd_grant(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"Пусть отправит фото анфас в этот бот.",
         parse_mode=ParseMode.HTML)
 
-    # Уведомить пользователя если знаем его chat_id — пока пропустим
-    # (они сами напишут в бот и получат)
+    # Отправить уведомление пользователю если знаем его chat_id
+    user_chat_id = get_chat_id_by_username(username)
+    if user_chat_id:
+        try:
+            await context.bot.send_message(
+                user_chat_id,
+                GRANT_TEXT,
+                parse_mode=ParseMode.HTML)
+            # Отправляем инструкцию по съёмке
+            instr_path = os.path.join(ASSETS_DIR, "instruction.pdf")
+            if os.path.exists(instr_path):
+                with open(instr_path, "rb") as f:
+                    await context.bot.send_document(
+                        user_chat_id, document=f,
+                        filename="Инструкция по съёмке — Facedex.pdf",
+                        caption="📸 <b>Инструкция по съёмке</b>\n\nПрочитайте перед отправкой фото для максимально точного результата.",
+                        parse_mode=ParseMode.HTML)
+        except Exception as e:
+            logger.warning(f"Grant notify error for @{username}: {e}")
 
 
 async def cmd_announce(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -323,10 +384,8 @@ async def photo_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     username = (user.username or "").lower()
 
-    # Всегда пересылаем фото администратору
     await _forward_to_admin(update, context)
 
-    # Проверяем грант (или это сам админ)
     tier = None
     if _is_admin(user):
         tier = "full"
@@ -334,7 +393,6 @@ async def photo_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         tier = consume_grant(username)
 
     if not tier:
-        # Нет гранта — сообщаем об оплате
         await update.message.reply_text(
             "🔒 <b>Сначала оплатите разбор</b>\n\n"
             "После оплаты свяжитесь с @facedex_support — "
@@ -357,7 +415,6 @@ async def photo_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         face_found = True
 
     if not face_found:
-        # Возвращаем грант — пусть повторит с другим фото
         if not _is_admin(user):
             grant_analysis(username, tier)
         await update.message.reply_text(
@@ -374,58 +431,33 @@ async def photo_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         metrics = await loop.run_in_executor(None, analyze_face, img_bytes)
         if not metrics:
             if not _is_admin(user):
-                grant_analysis(username, tier)  # возвращаем грант
+                grant_analysis(username, tier)
             await update.message.reply_text("❌ Анализ не удался. Попробуй другое фото.")
             return
 
-        # Аннотированное фото
-        if metrics.landmark_image:
-            await context.bot.send_photo(
-                update.effective_chat.id,
-                photo=BytesIO(metrics.landmark_image),
-                caption=(
-                    f"🎯 <b>Итоговый балл: {metrics.overall_score}/10</b>\n"
-                    f"🏆 {metrics.grade}\n"
-                    f"🏷 {metrics.tier} — {_tier_label(metrics.tier)}\n\n"
-                    f"📐 Золотое сечение: {metrics.golden_ratio_score}/10\n"
-                    f"🪞 Симметрия: {metrics.symmetry_score}/10\n"
-                    f"📏 Трети лица: {metrics.facial_thirds_score}/10\n"
-                    f"👁 Кантальный тильт: {metrics.canthal_tilt_score}/10 "
-                    f"({metrics.canthal_tilt_degrees:+.1f}°)\n"
-                    f"💪 Челюсть: {metrics.jaw_score}/10\n\n"
-                    "<i>PDF-отчёт ниже 👇</i>"
-                ),
-                parse_mode=ParseMode.HTML)
-
         uname = user.username or user.first_name or "user"
 
-        # Краткий — если тариф brief
         if tier == "brief":
             pdf_b = await loop.run_in_executor(None, generate_brief_pdf, metrics, uname)
             await context.bot.send_document(
                 update.effective_chat.id, BytesIO(pdf_b),
-                filename=f"facedex_brief_{user.id}.pdf",
+                filename="Краткий разбор — Facedex.pdf",
                 caption="📋 <b>Краткий разбор Facedex</b>\n\nСпасибо, что используешь Facedex! 🚀",
                 parse_mode=ParseMode.HTML)
         else:
-            # full — или для admin отправляем оба
             if _is_admin(user):
                 pdf_b = await loop.run_in_executor(None, generate_brief_pdf, metrics, uname)
                 await context.bot.send_document(
                     update.effective_chat.id, BytesIO(pdf_b),
-                    filename=f"facedex_brief_{user.id}.pdf",
+                    filename="Краткий разбор — Facedex.pdf",
                     caption="📋 <b>Краткий разбор</b> (администратор — превью)",
                     parse_mode=ParseMode.HTML)
 
             pdf_f = await loop.run_in_executor(None, generate_full_pdf, metrics, uname)
             await context.bot.send_document(
                 update.effective_chat.id, BytesIO(pdf_f),
-                filename=f"facedex_full_{user.id}.pdf",
-                caption=(
-                    "📊 <b>Полный разбор Facedex</b>\n\n"
-                    "Баллы, измерения, сравнение с нормами Фаркаса и персональные советы.\n\n"
-                    "<i>Спасибо, что используешь Facedex!</i> 🚀"
-                ),
+                filename="Полный разбор — Facedex.pdf",
+                caption="📊 <b>Полный разбор Facedex</b>",
                 parse_mode=ParseMode.HTML)
 
         increment_daily_count()
@@ -433,7 +465,7 @@ async def photo_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         logger.exception(f"Analysis error {user.id}: {e}")
         if not _is_admin(user):
-            grant_analysis(username, tier)  # возвращаем грант при ошибке
+            grant_analysis(username, tier)
         await update.message.reply_text("❌ Что-то пошло не так. Попробуй ещё раз.")
 
 
@@ -443,7 +475,7 @@ async def photo_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if _is_admin(update.effective_user):
-        return  # свои сообщения не пересылаем
+        return
     register_user(update.effective_chat.id)
     await _forward_to_admin(update, context)
 
