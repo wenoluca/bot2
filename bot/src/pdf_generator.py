@@ -287,6 +287,103 @@ def _draw_bell(c, x, y_bottom, w, h, score):
     c.restoreState()
 
 
+def _draw_gauge(c, cx, cy, r, score):
+    """
+    Спидометр. cx,cy — центр в canvas coords (y снизу).
+    Точки освещаются по дуге: 180° (левый край) → 0° (правый).
+    score 0 = пусто, score 10 = вся дуга.
+    """
+    c.saveState()
+    n_ticks = 36
+    for i in range(n_ticks):
+        t = i / (n_ticks - 1)          # 0 … 1
+        angle = math.radians(180 - t * 180)   # 180° → 0°
+        tx = cx + r * math.cos(angle)
+        ty = cy + r * math.sin(angle)
+        dot_r = r * 0.055
+        tick_score = t * 10
+        if tick_score <= score:
+            col = _sc(tick_score)
+        else:
+            col = PANEL
+        c.setFillColor(col)
+        c.circle(tx, ty, dot_r, fill=1, stroke=0)
+
+    # Игла
+    needle_angle = math.radians(180 - score * 18)
+    nx = cx + r * 0.68 * math.cos(needle_angle)
+    ny = cy + r * 0.68 * math.sin(needle_angle)
+    c.setStrokeColor(WHITE_TXT)
+    c.setLineWidth(1.8)
+    c.line(cx, cy, nx, ny)
+    c.setFillColor(WHITE_TXT)
+    c.circle(cx, cy, r * 0.06, fill=1, stroke=0)
+
+    # Балл по центру
+    c.setFont(B, r * 0.38)
+    c.setFillColor(_sc(score))
+    c.drawCentredString(cx, cy - r * 0.12, f"{score:.1f}")
+    c.setFont(R, r * 0.17)
+    c.setFillColor(DIM)
+    c.drawCentredString(cx, cy - r * 0.30, "из 10")
+
+    c.restoreState()
+
+
+def _draw_comparison_bars(c, x, y_top, w, your_val, norm_val):
+    """
+    Два горизонтальных бара «Вы» vs «Норма» в кадре.
+    """
+    if your_val is None or norm_val is None:
+        return
+    max_v = max(abs(float(your_val)), abs(float(norm_val)), 0.001)
+    bar_h = 6
+    bar_max_w = w
+    gap = 4
+
+    # — Ваш показатель
+    yw = bar_max_w * (abs(float(your_val)) / max_v)
+    _rect(c, x, y_top, bar_max_w, bar_h, fill=PANEL)
+    _rect(c, x, y_top, yw, bar_h, fill=INFL_BD)
+    _txt(c, f"Вы: {your_val}", x, y_top - 1, font=B, size=6.5, color=WHITE_TXT)
+
+    # — Норма Фаркаса
+    y2 = y_top + bar_h + gap
+    nw = bar_max_w * (abs(float(norm_val)) / max_v)
+    _rect(c, x, y2, bar_max_w, bar_h, fill=PANEL)
+    _rect(c, x, y2, nw, bar_h, fill=DIM)
+    _txt(c, f"Норма: {norm_val}", x, y2 - 1, font=B, size=6.5, color=DIM)
+
+
+def _draw_percentile_strip(c, x, y_top, w, score):
+    """
+    Цветная полоса с маркером и подписью «Топ X%».
+    """
+    h = 9
+    seg = w / 3
+    _rect(c, x,           y_top, seg, h, fill=C_LOW)
+    _rect(c, x + seg,     y_top, seg, h, fill=C_MID)
+    _rect(c, x + 2 * seg, y_top, seg, h, fill=C_HIGH)
+
+    # Маркер
+    mx = x + (score / 10) * w
+    c.saveState()
+    c.setStrokeColor(WHITE_TXT)
+    c.setLineWidth(2)
+    c.line(mx, _c(y_top - 4), mx, _c(y_top + h + 4))
+    c.restoreState()
+
+    # Подписи шкалы
+    _txt(c, "0",  x,         y_top + h + 5, font=R, size=6, color=DIM)
+    _txt(c, "5",  x + w / 2, y_top + h + 5, font=R, size=6, color=DIM, align="center")
+    _txt(c, "10", x + w,     y_top + h + 5, font=R, size=6, color=DIM, align="right")
+
+    # Топ %
+    top = _top_pct(score)
+    _txt(c, f"Топ {top} мужчин", x + w / 2, y_top - 6,
+         font=B, size=8, color=_sc(score), align="center")
+
+
 # ── Данные метрик ─────────────────────────────────────────────────────────────
 FARKAS_NORMS = {
     "symmetry":         ("Симметрия лица",            None,   None),
@@ -726,7 +823,7 @@ def generate_brief_pdf(metrics: FaceMetrics, name: str = "") -> bytes:
 
     btn_h = 13*mm
     _rect(c, ML, y, BW, btn_h, fill=INFL_BD)
-    _txt(c, "Купить полный разбор — 50 Stars  →",
+    _txt(c, "Получить полный разбор  →",
          W / 2, y + btn_h / 2 + 2*mm, font=B, size=12, color=WHITE_TXT, align="center")
 
     _footer(c, 2, 2)
@@ -939,7 +1036,7 @@ def _full_overview(c, metrics):
 
 
 def _full_metric_page(c, metrics, metric_tuple, m_idx, page_num):
-    """Страница метрики (страницы 3–22)."""
+    """Страница метрики (страницы 3–22) с тремя визуализациями."""
     field, name, num = metric_tuple
     score = _get_score(metrics, field)
     sc_col = _sc(score)
@@ -961,82 +1058,118 @@ def _full_metric_page(c, metrics, metric_tuple, m_idx, page_num):
         if detail_key:
             your_val = metrics.details.get(detail_key)
             if your_val is None and field == "symmetry_score":
-                e = metrics.details.get("eye_symmetry", 0)
+                e  = metrics.details.get("eye_symmetry", 0)
                 ck = metrics.details.get("cheek_symmetry", 0)
-                m = metrics.details.get("mouth_symmetry", 0)
+                m  = metrics.details.get("mouth_symmetry", 0)
                 your_val = round((e + ck + m) / 30, 3)
 
+    # ── Фон страницы ──────────────────────────────────────────────────────────
     _rect(c, 0, 0, W, H, fill=BG)
 
-    # Шапка метрики
+    # ── Шапка ────────────────────────────────────────────────────────────────
     num_str = f"{num:02d} / 20"
     _rect(c, 0, 0, W, MT + 11*mm, fill=SURFACE)
     _txt(c, name, ML, MT + 6*mm, font=B, size=13, color=WHITE_TXT)
     _txt(c, num_str, W - MR, MT + 6*mm, font=R, size=10, color=DIM, align="right")
     _hline(c, 0, MT + 11*mm, W, lw=0.7)
 
-    y = MT + 15*mm
+    y = MT + 14*mm
 
-    left_w = 90*mm
-    right_w = BW - left_w - 6*mm
-    right_x = ML + left_w + 6*mm
+    # ══════════════════════════════════════════════════════════════════════════
+    # ВЕРХНЯЯ СЕКЦИЯ  —  3 колонки
+    # Левая (38%): спидометр
+    # Центр (34%): инфо-панель
+    # Правая (28%): процентиль + сравнение
+    # ══════════════════════════════════════════════════════════════════════════
+    col1_w = BW * 0.37
+    col2_w = BW * 0.34
+    col3_w = BW * 0.27
+    col2_x = ML + col1_w + 3*mm
+    col3_x = col2_x + col2_w + 3*mm
 
-    # Бар оценки слева
-    bar_w = left_w - 10*mm
-    bar_x = ML + 5*mm
-    bar_y_top = y + 8*mm
-    _draw_score_bar(c, bar_x, bar_y_top, bar_w, 14*mm, score)
+    # ── Колонка 1: Спидометр ──────────────────────────────────────────────
+    gauge_r  = 25*mm
+    gauge_cx = ML + col1_w / 2
+    gauge_cy = _c(y + gauge_r + 12*mm)   # canvas y (from bottom)
+    _draw_gauge(c, gauge_cx, gauge_cy, gauge_r, score)
 
-    _txt(c, _lv(score), bar_x + bar_w / 2, bar_y_top + 20*mm,
-         font=R, size=9, color=sc_col, align="center")
+    # Уровень под спидометром
+    level_y = y + gauge_r * 2 + 16*mm
+    _txt(c, _lv(score), ML + col1_w / 2, level_y, font=B, size=10,
+         color=sc_col, align="center")
 
-    # Кривая нормального распределения под баром
-    bell_y = bar_y_top + 24*mm
-    _draw_bell(c, bar_x, bell_y + 14*mm, bar_w, 14*mm, score)
-
-    # Правая колонка — информационный блок
-    _rect(c, right_x, y, right_w, 38*mm, fill=SURFACE, stroke=LINE, lw=0.5)
+    # ── Колонка 2: Инфо-панель ────────────────────────────────────────────
+    panel_h = gauge_r * 2 + 16*mm
+    _rect(c, col2_x, y, col2_w, panel_h, fill=SURFACE, stroke=LINE, lw=0.5)
     ry = y + 4*mm
-    _txt(c, "Балл метрики", right_x + 4, ry, font=R, size=8, color=DIM)
+
+    _txt(c, "БАЛЛ", col2_x + 4, ry, font=B, size=7.5, color=DIM)
     ry += 5*mm
-    _txt(c, f"{score:.2f} / 10", right_x + 4, ry, font=B, size=16, color=sc_col)
+    _txt(c, f"{score:.2f} / 10", col2_x + 4, ry, font=B, size=17, color=sc_col)
+    ry += 9*mm
+
+    _hline(c, col2_x + 4, ry, col2_w - 8, color=LINE, lw=0.4)
+    ry += 4*mm
+
+    _txt(c, "ВАШ ПОКАЗАТЕЛЬ", col2_x + 4, ry, font=B, size=6.5, color=DIM)
+    ry += 4.5*mm
+    yv_str = str(your_val) if your_val is not None else "—"
+    _txt(c, yv_str, col2_x + 4, ry, font=B, size=11, color=WHITE_TXT)
+    ry += 6*mm
+
+    _txt(c, "НОРМА (Фаркас)", col2_x + 4, ry, font=B, size=6.5, color=DIM)
+    ry += 4.5*mm
+    nv_str = str(round(norm_val, 3)) if norm_val is not None else "—"
+    _txt(c, nv_str, col2_x + 4, ry, font=B, size=11, color=DIM)
     ry += 7*mm
-    _txt(c, "ВАШ ПОКАЗАТЕЛЬ", right_x + 4, ry, font=B, size=7, color=DIM)
-    ry += 4*mm
-    if your_val is not None:
-        _txt(c, str(your_val), right_x + 4, ry, font=R, size=10, color=WHITE_TXT)
-    _para(c, what_text, right_x + 4, ry + 3, right_w - 8, 12,
-          font=R, size=7.5, color=DIM)
-    ry += 11*mm
-    _txt(c, "НОРМА (Фаркас)", right_x + 4, ry, font=B, size=7, color=DIM)
-    ry += 4*mm
-    if norm_val is not None:
-        _txt(c, str(round(norm_val, 3)), right_x + 4, ry, font=R, size=10, color=WHITE_TXT)
-    else:
-        _txt(c, "—", right_x + 4, ry, font=R, size=10, color=WHITE_TXT)
 
-    # Тело страницы
-    y += 43*mm
-    _para(c, body_text, ML, y, BW, 45,
-          font=R, size=10, color=DIM, align=TA_JUSTIFY, leading=15)
-    y += 47*mm
+    _hline(c, col2_x + 4, ry, col2_w - 8, color=LINE, lw=0.4)
+    ry += 4*mm
+    _para(c, what_text, col2_x + 4, ry, col2_w - 8, 20,
+          font=R, size=7, color=DIM, align=TA_LEFT)
 
-    # Блок влияния
-    infl_h = 22*mm
+    # ── Колонка 3: Процентиль + сравнение ─────────────────────────────────
+    # Процентиль
+    _txt(c, "ПОЗИЦИЯ", col3_x, y + 3*mm, font=B, size=7.5, color=DIM)
+    _draw_percentile_strip(c, col3_x, y + 7*mm, col3_w, score)
+
+    # Сравнительные бары
+    if your_val is not None and norm_val is not None:
+        cmp_y = y + 26*mm
+        _txt(c, "ВЫ vs НОРМА", col3_x, cmp_y, font=B, size=7.5, color=DIM)
+        cmp_y += 4.5*mm
+        _draw_comparison_bars(c, col3_x, cmp_y, col3_w, your_val, norm_val)
+
+    # Кривая распределения
+    bell_y_top = y + 47*mm
+    _txt(c, "РАСПРЕДЕЛЕНИЕ", col3_x, bell_y_top - 1, font=B, size=7.5, color=DIM)
+    _draw_bell(c, col3_x, bell_y_top + 15*mm, col3_w, 14*mm, score)
+
+    # ══════════════════════════════════════════════════════════════════════════
+    # ТЕКСТ — под верхней секцией
+    # ══════════════════════════════════════════════════════════════════════════
+    y += panel_h + 5*mm
+
+    _para(c, body_text, ML, y, BW, 38,
+          font=R, size=9.5, color=DIM, align=TA_JUSTIFY, leading=14)
+    y += 40*mm
+
+    # ── Блок влияния ──────────────────────────────────────────────────────────
+    infl_h = 20*mm
     _rect(c, ML, y, BW, infl_h, fill=INFL_BG, stroke=INFL_BD, lw=0.8)
-    _txt(c, "ВЛИЯНИЕ", ML + 5, y + 5*mm, font=B, size=8, color=INFL_BD)
-    _para(c, influence_text, ML + 5, y + 6*mm, BW - 10, infl_h - 7*mm,
-          font=R, size=9.5, color=WHITE_TXT, align=TA_JUSTIFY)
+    _txt(c, "ВЛИЯНИЕ", ML + 5, y + 4.5*mm, font=B, size=8, color=INFL_BD)
+    _para(c, influence_text, ML + 5, y + 5.5*mm, BW - 10, infl_h - 6.5*mm,
+          font=R, size=9, color=WHITE_TXT, align=TA_JUSTIFY)
 
-    # Совет по метрике (если есть)
-    y += infl_h + 5*mm
+    # ── КАК УЛУЧШИТЬ ─────────────────────────────────────────────────────────
+    y += infl_h + 4*mm
     advice = METRIC_ADVICE.get(field, "")
-    if advice and y < H - 50*mm:
+    if advice and y < H - 45*mm:
         _rect(c, ML, y, BW, 5.5*mm, fill=PANEL)
         _rect(c, ML, y, 3, 5.5*mm, fill=C_HIGH)
         _txt(c, "КАК УЛУЧШИТЬ", ML + 7, y + 3.8*mm, font=B, size=8, color=C_HIGH)
         y += 7.5*mm
-        _para(c, advice, ML, y, BW, 30,
+        _para(c, advice, ML, y, BW, 28,
               font=R, size=9.5, color=DIM, align=TA_JUSTIFY)
 
     _footer(c, page_num, 25)

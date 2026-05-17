@@ -5,10 +5,10 @@ generated = []
 id = "PaOgP44Rbhy6qfV0K0hax"
 uri = "file://bot/assets/example_brief.pdf"
 type = "pdf"
-title = "Краткий разбор (пример)"
+title = "Краткий разбор — без цены, тёмная тема"
 
 [[outputs]]
 id = "Aqn0scHcD1nc18X35uKMx"
 uri = "file://bot/assets/example_full.pdf"
 type = "pdf"
-title = "Полный разбор (пример)"
+title = "Полный разбор — спидометр, сравнение, процентиль"
