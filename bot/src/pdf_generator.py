@@ -84,7 +84,7 @@ def _tier_label(t):
     return {
         "True Adam": "True Adam",
         "Chad":      "Chad",
-        "Chadlite":  "Chadlite",
+        "HHTN":      "HHTN",
         "HTN":       "High Tier Normie",
         "MTN":       "Mid Tier Normie",
         "LTN":       "Low Tier Normie",
@@ -101,7 +101,7 @@ def _top_pct(s):
 def _level_str(s):
     if s >= 9.0: return "True Adam — Топ 1% мужчин"
     if s >= 8.0: return "Chad — Топ 5%"
-    if s >= 7.5: return "Chadlite — Топ 15%"
+    if s >= 7.5: return "HHTN — High High Tier Normie"
     if s >= 6.0: return "HTN — High Tier Normie"
     if s >= 4.5: return "MTN — Mid Tier Normie"
     return "LTN — Low Tier Normie"

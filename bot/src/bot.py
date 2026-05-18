@@ -55,7 +55,7 @@ def _tier_label(t):
     return {
         "True Adam": "True Adam",
         "Chad":      "Chad",
-        "Chadlite":  "Chadlite",
+        "HHTN":      "HHTN",
         "HTN":       "High Tier Normie",
         "MTN":       "Mid Tier Normie",
         "LTN":       "Low Tier Normie",
@@ -113,7 +113,7 @@ BRIEF_TEXT = (
     "🔸 <b>Итоговая оценка гармонии:</b>\n"
     "математический балл по геометрии лица — насколько твои пропорции близки к норме.\n\n"
     "🔸 <b>Тир по looksmaxing-шкале:</b>\n"
-    "LTN / MTN / HTN / Chadlite / Chad / True Adam — твоя категория внешности.\n\n"
+    "LTN / MTN / HTN / HHTN / Chad / True Adam — твоя категория внешности.\n\n"
     "🔸 <b>Оценка по ключевым параметрам:</b>\n"
     "глаза, нос, губы, скулы, челюсть, брови, симметрия и баланс — где у тебя сильные стороны и где оценка проседает."
     "</blockquote>\n\n"

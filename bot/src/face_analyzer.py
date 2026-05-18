@@ -180,7 +180,7 @@ def _get_tier(score: float) -> str:
     elif score >= 8.0:
         return "Chad"
     elif score >= 7.5:
-        return "Chadlite"
+        return "HHTN"
     elif score >= 6.0:
         return "HTN"
     elif score >= 4.5:
@@ -195,7 +195,7 @@ def _get_grade(score: float) -> str:
     elif score >= 8.0:
         return "Chad — Топ 5%"
     elif score >= 7.5:
-        return "Chadlite — Топ 15%"
+        return "HHTN — High High Tier Normie"
     elif score >= 6.0:
         return "HTN — High Tier Normie"
     elif score >= 4.5:
