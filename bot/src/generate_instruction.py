@@ -131,7 +131,7 @@ def generate_instruction_pdf() -> bytes:
     st = []
 
     # Шапка
-    st.append(Paragraph("FACEDEX",
+    st.append(Paragraph("QZELS FACE BOT",
                          _s("t", fontName=BOLD, fontSize=30, textColor=GOLD,
                             alignment=TA_CENTER, spaceAfter=0)))
     st.append(Paragraph("Как сделать правильную фотографию для анализа",
@@ -275,7 +275,7 @@ def generate_instruction_pdf() -> bytes:
     st.append(cta_tbl)
     st.append(Spacer(1, 4*mm))
     st.append(HRFlowable(width="100%", thickness=1.5, color=GOLD, spaceAfter=2*mm))
-    st.append(Paragraph("Facedex  •  Математический анализ гармонии лица",
+    st.append(Paragraph("Qzels Face Bot  •  Математический анализ гармонии лица",
                          _s("ft", fontSize=8, textColor=DIM, alignment=TA_CENTER)))
 
     doc.build(st, onFirstPage=_dark_bg, onLaterPages=_dark_bg)

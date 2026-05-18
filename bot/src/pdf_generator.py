@@ -53,7 +53,7 @@ INFL_BG   = colors.HexColor("#0D1B3E")   # блок влияния
 INFL_BD   = colors.HexColor("#4A6CF7")   # граница блока влияния
 SCORE_BG  = SURFACE
 
-BOT    = "Facedex"
+BOT    = "Qzels Face Bot"
 HANDLE = "@qzelshelp_bot"
 
 # ── Вспомогательные ──────────────────────────────────────────────────────────
@@ -1529,7 +1529,7 @@ def generate_full_pdf(metrics: FaceMetrics, name: str = "") -> bytes:
 
     btn_h = 12*mm
     _rect(c, ML, y25, BW, btn_h, fill=INFL_BD)
-    _txt(c, f"Telegram: {HANDLE}  —  Facedex",
+    _txt(c, f"Telegram: {HANDLE}  —  Qzels Face Bot",
          W / 2, y25 + btn_h / 2 + 1.5*mm, font=B, size=11, color=WHITE_TXT, align="center")
 
     _footer(c, 25, 25)
