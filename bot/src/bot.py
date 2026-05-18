@@ -53,13 +53,145 @@ def _is_admin(user) -> bool:
 
 def _tier_label(t):
     return {
-        "True Adam": "True Adam",
-        "Chad":      "Chad",
-        "HHTN":      "HHTN",
-        "HTN":       "High Tier Normie",
-        "MTN":       "Mid Tier Normie",
-        "LTN":       "Low Tier Normie",
+        "True Adam":    "True Adam",
+        "Chad":         "Chad",
+        "High ChadLite":"High ChadLite",
+        "Low ChadLite": "Low ChadLite",
+        "HHTN":         "HHTN",
+        "HTN":          "High Tier Normie",
+        "MTN":          "Mid Tier Normie",
+        "LTN":          "Low Tier Normie",
     }.get(t, t)
+
+
+# ════════════════════════════════════════════════════════════════════════════
+#  Ручная проверка администратором
+# ════════════════════════════════════════════════════════════════════════════
+
+REVIEW_METRICS = [
+    ("canthal_tilt", "👁 Наклон глаз (canthal tilt)"),
+    ("jaw",          "💪 Линия челюсти"),
+    ("cheekbones",   "📐 Скулы / скуловые кости"),
+    ("nose",         "👃 Нос"),
+    ("lips",         "👄 Губы"),
+    ("symmetry",     "🪞 Симметрия лица"),
+    ("overall",      "⭐ Общая гармония"),
+]
+
+REVIEW_TIMEOUT = 60  # секунд до автоанализа
+
+
+def _manual_tier(avg: float) -> str:
+    if avg >= 9.0:
+        return "Chad"
+    if avg >= 8.0:
+        return "High ChadLite"
+    if avg >= 7.9:
+        return "Low ChadLite"
+    if avg >= 7.5:
+        return "HHTN"
+    if avg >= 6.5:
+        return "HTN"
+    if avg >= 5.0:
+        return "MTN"
+    return "LTN"
+
+
+def kb_metric_rating(user_id: int, metric_idx: int) -> InlineKeyboardMarkup:
+    prefix = f"rev:{user_id}:{metric_idx}"
+    row1 = [InlineKeyboardButton(str(s), callback_data=f"{prefix}:{s}") for s in range(1, 6)]
+    row2 = [InlineKeyboardButton(str(s), callback_data=f"{prefix}:{s}") for s in range(6, 11)]
+    return InlineKeyboardMarkup([row1, row2])
+
+
+async def _send_metric_question(
+    bot, admin_id: int, user_id: int, metric_idx: int,
+    user_name: str, msg_id: int = None,
+) -> int:
+    metric_key, metric_label = REVIEW_METRICS[metric_idx]
+    total = len(REVIEW_METRICS)
+    text = (
+        f"🔍 <b>Оцени лицо</b> — {user_name}\n\n"
+        f"📊 Метрика {metric_idx + 1}/{total}:\n"
+        f"<b>{metric_label}</b>\n\n"
+        "Выбери оценку от <b>1</b> (очень плохо) до <b>10</b> (идеально):"
+    )
+    kb = kb_metric_rating(user_id, metric_idx)
+    if msg_id:
+        try:
+            await bot.edit_message_text(
+                text, admin_id, msg_id,
+                parse_mode=ParseMode.HTML, reply_markup=kb,
+            )
+            return msg_id
+        except Exception:
+            pass
+    msg = await bot.send_message(admin_id, text, parse_mode=ParseMode.HTML, reply_markup=kb)
+    return msg.message_id
+
+
+async def _run_analysis_for_user(
+    bot, user_chat_id: int, file_id: str, tier: str,
+    user_name: str, loop, manual_scores: dict = None,
+):
+    tg_file = await bot.get_file(file_id)
+    img_bytes = bytes(await tg_file.download_as_bytearray())
+
+    try:
+        metrics = await loop.run_in_executor(None, analyze_face, img_bytes)
+    except Exception as e:
+        logger.warning(f"Analysis error for {user_chat_id}: {e}")
+        metrics = None
+
+    if not metrics:
+        await bot.send_message(
+            user_chat_id,
+            "❌ Анализ не удался. Попробуй другое фото или свяжись с поддержкой.",
+            parse_mode=ParseMode.HTML,
+        )
+        return
+
+    if manual_scores and len(manual_scores) > 0:
+        avg = sum(manual_scores.values()) / len(manual_scores)
+        metrics.tier = _manual_tier(avg)
+        metrics.overall_score = avg
+
+    if tier == "brief":
+        pdf_b = await loop.run_in_executor(None, generate_brief_pdf, metrics, user_name)
+        await bot.send_document(
+            user_chat_id, BytesIO(pdf_b),
+            filename="Краткий разбор — Qzels Face Bot.pdf",
+            caption="📋 <b>Краткий разбор Qzels Face Bot</b>\n\nСпасибо, что используешь Qzels Face Bot! 🚀",
+            parse_mode=ParseMode.HTML,
+        )
+    else:
+        pdf_f = await loop.run_in_executor(None, generate_full_pdf, metrics, user_name)
+        await bot.send_document(
+            user_chat_id, BytesIO(pdf_f),
+            filename="Полный разбор — Qzels Face Bot.pdf",
+            caption="📊 <b>Полный разбор Qzels Face Bot</b>",
+            parse_mode=ParseMode.HTML,
+        )
+
+    increment_daily_count()
+
+
+async def _timeout_review(app, user_id: int, user_chat_id: int, file_id: str, tier: str, user_name: str):
+    await asyncio.sleep(REVIEW_TIMEOUT)
+    reviews = app.bot_data.get("reviews", {})
+    if user_id not in reviews:
+        return
+    reviews.pop(user_id, None)
+    logger.info(f"Review timeout for user {user_id} — автоанализ")
+    loop = asyncio.get_event_loop()
+    try:
+        await _run_analysis_for_user(app.bot, user_chat_id, file_id, tier, user_name, loop)
+    except Exception as e:
+        logger.exception(f"Timeout fallback error for {user_id}: {e}")
+        try:
+            await app.bot.send_message(user_chat_id, "❌ Что-то пошло не так. Свяжитесь с поддержкой.")
+        except Exception:
+            pass
 
 
 # ════════════════════════════════════════════════════════════════════════════
