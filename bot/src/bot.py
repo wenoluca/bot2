@@ -229,16 +229,14 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     example_photo_path = os.path.join(ASSETS_DIR, "example_face.jpg")
     if os.path.exists(example_photo_path):
         with open(example_photo_path, "rb") as f:
-            await context.bot.send_photo(
-                update.effective_chat.id,
-                photo=f,
-                caption=_main_text(),
-                parse_mode=ParseMode.HTML,
-                reply_markup=kb_main(),
-            )
-    else:
-        await update.message.reply_text(
-            _main_text(), parse_mode=ParseMode.HTML, reply_markup=kb_main())
+            await context.bot.send_photo(update.effective_chat.id, photo=f)
+
+    await context.bot.send_message(
+        update.effective_chat.id,
+        _main_text(),
+        parse_mode=ParseMode.HTML,
+        reply_markup=kb_main(),
+    )
     await _send_example_pdfs(update.effective_chat.id, context)
 
 
