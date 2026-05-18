@@ -1,486 +1,545 @@
 """
-Generates instruction images showing correct/incorrect photo poses.
-Uses realistic human silhouettes drawn with Pillow.
+Generates 8 instruction images (one per rule) for the instruction PDF.
+Dark theme, human silhouettes, ПРАВИЛЬНО / НЕПРАВИЛЬНО panels.
 """
-import os
-import math
-from PIL import Image, ImageDraw, ImageFont
+import os, math
+from PIL import Image, ImageDraw, ImageFont, ImageFilter
 
 ASSETS_DIR = os.path.join(os.path.dirname(__file__), "..", "assets")
 FONT_PATH  = os.path.join(ASSETS_DIR, "DejaVuSans.ttf")
 
-BG      = (14, 14, 22)
-PANEL   = (22, 22, 34)
-GREEN   = (80, 210, 140)
-RED     = (235, 70, 70)
-GOLD    = (220, 180, 50)
-WHITE   = (235, 235, 248)
-GREY    = (120, 120, 145)
-LBLUE   = (100, 160, 230)
+# Palette
+BG     = (11, 11, 18)
+PANEL  = (20, 20, 32)
+CARD   = (26, 26, 40)
+GREEN  = (72, 210, 130)
+RED    = (230, 65, 65)
+GOLD   = (218, 172, 40)
+WHITE  = (232, 232, 245)
+GREY   = (110, 110, 138)
+LBLUE  = (90, 150, 225)
+ORANGE = (230, 150, 40)
 
-W, H = 960, 560
+IW, IH = 900, 420   # image size per rule card
 
+# ── Font helpers ──────────────────────────────────────────────────────────────
+def _f(size):
+    try:    return ImageFont.truetype(FONT_PATH, size)
+    except: return ImageFont.load_default()
 
-def _font(size: int):
-    try:
-        return ImageFont.truetype(FONT_PATH, size)
-    except Exception:
-        return ImageFont.load_default()
+def _tw(draw, text, font):
+    bb = draw.textbbox((0,0), text, font=font)
+    return bb[2]-bb[0], bb[3]-bb[1]
 
+def _tc(draw, cx, y, text, font, color):
+    w, _ = _tw(draw, text, font)
+    draw.text((cx - w//2, y), text, font=font, fill=color)
 
-def _text_center(draw, y, text, font, color):
-    bbox = draw.textbbox((0, 0), text, font=font)
-    tw = bbox[2] - bbox[0]
-    draw.text(((W - tw) // 2, y), text, font=font, fill=color)
-
-
-def _rounded_rect(draw, x1, y1, x2, y2, r, fill=None, outline=None, width=2):
-    draw.rounded_rectangle([x1, y1, x2, y2], radius=r, fill=fill, outline=outline, width=width)
-
-
-# ─── Human silhouette drawing functions ──────────────────────────────────────
-
-def _draw_human_frontal(draw, cx, cy, scale=1.0, color=WHITE, alpha_bg=None):
-    """Draw a front-facing human silhouette."""
-    s = scale
-
-    # Head (oval)
-    hw, hh = int(38 * s), int(48 * s)
-    head_top = cy - int(130 * s)
-    draw.ellipse([cx - hw, head_top, cx + hw, head_top + hh * 2],
-                 outline=color, width=max(2, int(3 * s)), fill=PANEL)
-
-    # Neck
-    nw = int(14 * s)
-    neck_top = head_top + hh * 2
-    neck_bot = neck_top + int(18 * s)
-    draw.rectangle([cx - nw, neck_top, cx + nw, neck_bot], fill=PANEL, outline=color,
-                   width=max(1, int(2 * s)))
-
-    # Shoulders + torso
-    sw = int(70 * s)
-    sh = int(90 * s)
-    tor_top = neck_bot
-    tor_bot = tor_top + sh
-    # Trapezoid shoulders
-    draw.polygon([
-        (cx - sw, tor_top + int(20 * s)),
-        (cx + sw, tor_top + int(20 * s)),
-        (cx + int(45 * s), tor_bot),
-        (cx - int(45 * s), tor_bot),
-    ], outline=color, fill=PANEL)
-
-    # Eyes
-    ey = head_top + int(22 * s)
-    ew = int(8 * s)
-    for ex in (cx - int(16 * s), cx + int(16 * s)):
-        draw.ellipse([ex - ew, ey - int(5 * s), ex + ew, ey + int(5 * s)],
-                     fill=color)
-        draw.ellipse([ex - int(4 * s), ey - int(3 * s), ex + int(4 * s), ey + int(3 * s)],
-                     fill=PANEL)
-
-    # Nose
-    ny = ey + int(16 * s)
-    draw.line([(cx, ny), (cx, ny + int(12 * s))], fill=GREY, width=max(1, int(2 * s)))
-    draw.line([(cx - int(7 * s), ny + int(12 * s)), (cx + int(7 * s), ny + int(12 * s))],
-              fill=GREY, width=max(1, int(2 * s)))
-
-    # Mouth
-    my = ny + int(20 * s)
-    draw.arc([cx - int(14 * s), my - int(5 * s), cx + int(14 * s), my + int(10 * s)],
-             0, 180, fill=color, width=max(1, int(2 * s)))
-
-    return head_top, tor_bot
+def _rr(draw, x1, y1, x2, y2, r, fill=None, outline=None, lw=2):
+    draw.rounded_rectangle([x1,y1,x2,y2], radius=r, fill=fill, outline=outline, width=lw)
 
 
-def _draw_human_profile(draw, cx, cy, scale=1.0, color=RED, facing_left=True):
-    """Draw a side-profile human silhouette."""
-    s = scale
-    d = -1 if facing_left else 1
+# ── Human silhouette primitives ───────────────────────────────────────────────
 
-    hw, hh = int(30 * s), int(46 * s)
-    head_top = cy - int(130 * s)
-    head_cx = cx + d * int(10 * s)
+class Human:
+    """Draws a schematic human (head + neck + shoulders) at (cx, cy)."""
 
-    # Head oval (shifted to show profile)
-    draw.ellipse([head_cx - hw, head_top, head_cx + hw, head_top + hh * 2],
-                 outline=color, width=3, fill=PANEL)
+    def __init__(self, draw, cx, cy, scale=1.0):
+        self.d = draw
+        self.cx = cx
+        self.cy = cy
+        self.s = scale
+        self.hw = int(36 * scale)   # head half-width
+        self.hh = int(46 * scale)   # head half-height
+        self.ht = cy - int(128 * scale)  # head top y
 
-    # Nose bump (profile)
-    nose_y = head_top + int(30 * s)
-    nose_x = head_cx + d * hw
-    draw.polygon([
-        (nose_x, nose_y),
-        (nose_x + d * int(18 * s), nose_y + int(10 * s)),
-        (nose_x + d * int(12 * s), nose_y + int(22 * s)),
-        (nose_x, nose_y + int(20 * s)),
-    ], fill=PANEL, outline=color)
+    def head_center(self):
+        return self.cx, self.ht + self.hh
 
-    # One eye
-    ey = head_top + int(22 * s)
-    ex = head_cx + d * int(8 * s)
-    draw.ellipse([ex - int(8 * s), ey - int(5 * s), ex + int(8 * s), ey + int(5 * s)],
-                 fill=color)
+    def draw_head(self, color=WHITE, bg=PANEL, tilt_deg=0, turn_deg=0):
+        """Draw oval head, optionally tilted or turned."""
+        d, cx, s = self.d, self.cx, self.s
+        hcy = self.ht + self.hh   # head center y
+        hw, hh = self.hw, self.hh
 
-    # Lips
-    ly = head_top + int(60 * s)
-    lx = head_cx + d * (hw - int(5 * s))
-    draw.arc([lx - int(10 * s), ly - int(6 * s), lx + int(10 * s), ly + int(6 * s)],
-             180 if facing_left else 0, 360 if facing_left else 180, fill=color, width=2)
+        if tilt_deg != 0:
+            a = math.radians(tilt_deg)
+            pts = []
+            for i in range(0, 360, 6):
+                r = math.radians(i)
+                x = hw * math.cos(r)
+                y = hh * math.sin(r)
+                rx = x*math.cos(a) - y*math.sin(a) + cx
+                ry = x*math.sin(a) + y*math.cos(a) + hcy
+                pts.append((rx, ry))
+            d.polygon(pts, fill=bg, outline=color)
+        elif turn_deg != 0:
+            # Squeeze head width to simulate horizontal rotation
+            ratio = max(0.25, 1 - abs(turn_deg)/110)
+            tw = max(8, int(hw * ratio))
+            d.ellipse([cx-tw, self.ht, cx+tw, self.ht+hh*2], fill=bg, outline=color, width=2)
+            # Draw profile nose
+            side = 1 if turn_deg > 0 else -1
+            nx = cx + side * tw
+            ny = hcy + int(2*s)
+            d.polygon([
+                (nx, ny - int(12*s)),
+                (nx + side*int(16*s), ny + int(6*s)),
+                (nx + side*int(10*s), ny + int(18*s)),
+                (nx, ny + int(16*s)),
+            ], fill=bg, outline=color)
+        else:
+            d.ellipse([cx-hw, self.ht, cx+hw, self.ht+hh*2], fill=bg, outline=color, width=2)
 
-    # Neck + shoulders (still frontal-ish)
-    nw = int(14 * s)
-    neck_top = head_top + hh * 2
-    neck_bot = neck_top + int(18 * s)
-    draw.rectangle([cx - nw, neck_top, cx + nw, neck_bot], fill=PANEL, outline=color, width=2)
-    sw = int(65 * s)
-    sh = int(80 * s)
-    draw.polygon([
-        (cx - sw, neck_bot + int(20 * s)),
-        (cx + sw, neck_bot + int(20 * s)),
-        (cx + int(42 * s), neck_bot + sh),
-        (cx - int(42 * s), neck_bot + sh),
-    ], outline=color, fill=PANEL)
+        return hcy
 
-    # Big red arrow showing it's turned
-    ax = cx + d * int(60 * s)
-    ay = head_top + int(44 * s)
-    draw.line([(ax, ay), (ax + d * int(35 * s), ay)], fill=RED, width=4)
-    # Arrow head
-    for offset in range(1, 10):
-        draw.line([(ax + d * int(35 * s), ay),
-                   (ax + d * int(35 * s) - d * offset, ay - offset)], fill=RED, width=3)
-        draw.line([(ax + d * int(35 * s), ay),
-                   (ax + d * int(35 * s) - d * offset, ay + offset)], fill=RED, width=3)
+    def draw_face_features(self, color=WHITE, tilt_deg=0, expression="neutral"):
+        """Eyes, nose, mouth."""
+        d, cx, s = self.d, self.cx, self.s
+        hcy = self.ht + self.hh
+        a = math.radians(tilt_deg)
 
+        def rot(px, py):
+            px -= cx; py -= hcy
+            return cx + px*math.cos(a) - py*math.sin(a), \
+                   hcy + px*math.sin(a) + py*math.cos(a)
 
-def _draw_human_tilted(draw, cx, cy, scale=1.0, tilt_deg=22):
-    """Draw a human with tilted head (toward shoulder)."""
-    s = scale
-    angle = math.radians(tilt_deg)
+        ey = hcy - int(12*s)
+        for ex_off in (-int(15*s), int(15*s)):
+            rx, ry = rot(cx+ex_off, ey)
+            d.ellipse([rx-int(7*s), ry-int(5*s), rx+int(7*s), ry+int(5*s)], fill=color)
+            d.ellipse([rx-int(4*s), ry-int(3*s), rx+int(4*s), ry+int(3*s)], fill=PANEL)
 
-    def rot(px, py, origin_x, origin_y):
-        px -= origin_x; py -= origin_y
-        rx = px * math.cos(angle) - py * math.sin(angle)
-        ry = px * math.sin(angle) + py * math.cos(angle)
-        return rx + origin_x, ry + origin_y
+        # Nose
+        rn1 = rot(cx, hcy+int(2*s))
+        rn2 = rot(cx, hcy+int(14*s))
+        d.line([rn1, rn2], fill=GREY, width=max(1,int(2*s)))
+        rn3 = rot(cx-int(7*s), hcy+int(14*s))
+        rn4 = rot(cx+int(7*s), hcy+int(14*s))
+        d.line([rn3, rn4], fill=GREY, width=max(1,int(2*s)))
 
-    hw, hh = int(38 * s), int(48 * s)
-    head_top = cy - int(130 * s)
-    head_cx = cx
-    head_cy = head_top + hh
-    pivot = (head_cx, head_cy)
+        # Mouth
+        my = hcy + int(26*s)
+        if expression == "neutral":
+            rm1 = rot(cx-int(12*s), my)
+            rm2 = rot(cx+int(12*s), my)
+            d.line([rm1, rm2], fill=color, width=max(1,int(2*s)))
+        elif expression == "smile":
+            rm_bb = [cx-int(13*s), my-int(4*s), cx+int(13*s), my+int(10*s)]
+            d.arc(rm_bb, 0, 180, fill=GREEN, width=max(2,int(3*s)))
+        elif expression == "open":
+            rx1, ry1 = rot(cx-int(10*s), my-int(2*s))
+            rx2, ry2 = rot(cx+int(10*s), my+int(10*s))
+            d.ellipse([min(rx1,rx2), min(ry1,ry2), max(rx1,rx2), max(ry1,ry2)], fill=RED)
 
-    # Rotated head oval (approximate as polygon)
-    pts = []
-    for i in range(0, 360, 8):
-        r = math.radians(i)
-        x = head_cx + hw * math.cos(r)
-        y = head_cy + hh * math.sin(r)
-        rx, ry = rot(x, y, *pivot)
-        pts.append((rx, ry))
-    draw.polygon(pts, outline=RED, fill=PANEL)
+    def draw_neck(self, color=WHITE):
+        d, cx, s = self.d, self.cx, self.s
+        nw = int(13*s)
+        nt = self.ht + self.hh*2
+        nb = nt + int(18*s)
+        d.rectangle([cx-nw, nt, cx+nw, nb], fill=PANEL, outline=color, width=1)
+        self.neck_bot = nb
+        return nb
 
-    # Eyes (rotated)
-    ey = head_cy - int(10 * s)
-    for ex_off in (-int(16 * s), int(16 * s)):
-        rx, ry = rot(head_cx + ex_off, ey, *pivot)
-        draw.ellipse([rx - int(7 * s), ry - int(4 * s), rx + int(7 * s), ry + int(4 * s)],
-                     fill=RED)
+    def draw_shoulders(self, color=WHITE):
+        d, cx, s = self.d, self.cx, self.s
+        nb = getattr(self, 'neck_bot', self.ht + self.hh*2 + int(18*s))
+        sw = int(65*s)
+        sh = int(75*s)
+        d.polygon([
+            (cx-sw, nb+int(16*s)), (cx+sw, nb+int(16*s)),
+            (cx+int(42*s), nb+sh), (cx-int(42*s), nb+sh),
+        ], fill=PANEL, outline=color)
 
-    # Nose line (rotated)
-    ny = head_cy + int(8 * s)
-    rn1 = rot(head_cx, ny, *pivot)
-    rn2 = rot(head_cx, ny + int(14 * s), *pivot)
-    draw.line([rn1, rn2], fill=GREY, width=2)
+    def draw_full(self, color=WHITE, tilt_deg=0, turn_deg=0, expression="neutral"):
+        self.draw_head(color, tilt_deg=tilt_deg, turn_deg=turn_deg)
+        if turn_deg == 0:
+            self.draw_face_features(color, tilt_deg=tilt_deg, expression=expression)
+        self.draw_neck(color)
+        self.draw_shoulders(color)
 
-    # Neck + shoulders (not rotated)
-    nw = int(14 * s)
-    neck_top = head_top + hh * 2 + int(5 * s)
-    neck_bot = neck_top + int(18 * s)
-    draw.rectangle([cx - nw, neck_top, cx + nw, neck_bot], fill=PANEL, outline=RED, width=2)
-    sw = int(65 * s)
-    sh = int(80 * s)
-    draw.polygon([
-        (cx - sw, neck_bot + int(20 * s)),
-        (cx + sw, neck_bot + int(20 * s)),
-        (cx + int(42 * s), neck_bot + sh),
-        (cx - int(42 * s), neck_bot + sh),
-    ], outline=RED, fill=PANEL)
+    def draw_hair(self, style="open"):
+        """open = bun/back, bangs = covering forehead."""
+        d, cx, s = self.d, self.cx, self.s
+        if style == "bangs":
+            # Heavy fringe
+            for i in range(-self.hw, self.hw+1, 7):
+                y0 = self.ht - int(4*s)
+                y1 = self.ht + int(22*s) + abs(i)//4
+                d.line([(cx+i, y0), (cx+i, y1)], fill=(110,72,28), width=3)
+            d.arc([cx-self.hw+4, self.ht-8, cx+self.hw-4, self.ht+int(28*s)],
+                  195, 345, fill=(90,58,20), width=7)
+        else:
+            d.arc([cx-self.hw, self.ht, cx+self.hw, self.ht+int(8*s)],
+                  200, 340, fill=(110,72,28), width=4)
+            bx, by = cx+self.hw-int(8*s), self.ht
+            d.ellipse([bx-int(10*s), by, bx+int(10*s), by+int(22*s)],
+                      fill=(110,72,28), outline=(90,58,20), width=2)
 
-    # Curved arrow showing tilt
-    ax, ay = cx + int(65 * s), head_cy - int(20 * s)
-    draw.arc([ax - int(25 * s), ay - int(25 * s), ax + int(25 * s), ay + int(25 * s)],
-             -30, 60, fill=RED, width=3)
-
-
-def _draw_human_hair(draw, cx, cy, scale=1.0, cover=False, color=WHITE):
-    """Draw hair - either covering forehead (wrong) or pulled back (right)."""
-    s = scale
-    hw, hh = int(38 * s), int(48 * s)
-    head_top = cy - int(130 * s)
-    head_cy = head_top + hh
-
-    if cover:
-        # Hair covering forehead
-        for i in range(0, 12):
-            hx = cx - hw + i * int(7 * s)
-            hy_start = head_top - int(5 * s)
-            hy_end = head_top + int(25 * s) + (i % 3) * int(5 * s)
-            draw.line([(hx, hy_start), (hx, hy_end)], fill=(120, 80, 40), width=3)
-        # Fringe covering eyes
-        draw.arc([cx - hw + int(5 * s), head_top - int(8 * s),
-                  cx + hw - int(5 * s), head_top + int(35 * s)],
-                 200, 340, fill=(100, 65, 30), width=8)
-    else:
-        # Hair pulled back (just a bun hint)
-        draw.arc([cx - hw, head_top, cx + hw, head_top + int(10 * s)],
-                 200, 340, fill=(120, 80, 40), width=5)
-        draw.ellipse([cx + hw - int(12 * s), head_top,
-                      cx + hw + int(12 * s), head_top + int(24 * s)],
-                     fill=(120, 80, 40), outline=(100, 65, 30), width=2)
-
-
-def _draw_camera_frame(draw, cx, cy, scale=1.0, color=LBLUE):
-    """Draw camera viewfinder frame around person."""
-    s = scale
-    fw = int(110 * s)
-    fh = int(160 * s)
-    fy = cy - int(145 * s)
-    draw.rectangle([cx - fw, fy, cx + fw, fy + fh], outline=color, width=2)
-    # Corner markers
-    cl = 18
-    for px, py in [(cx - fw, fy), (cx + fw, fy), (cx - fw, fy + fh), (cx + fw, fy + fh)]:
-        dx = 1 if px < cx else -1
-        dy = 1 if py < cy else -1
-        draw.line([(px, py), (px + dx * cl, py)], fill=color, width=3)
-        draw.line([(px, py), (px, py + dy * cl)], fill=color, width=3)
+    def draw_guide_lines(self, color=GREEN):
+        """Vertical + horizontal cross-hair alignment guides."""
+        d, cx, s = self.d, self.cx, self.s
+        top_y = self.ht - int(5*s)
+        bot_y = self.ht + self.hh*2 + int(80*s)
+        d.line([(cx, top_y), (cx, bot_y)], fill=(*color, 120), width=1)
+        eye_y = self.ht + self.hh - int(12*s)
+        d.line([(cx - int(75*s), eye_y), (cx + int(75*s), eye_y)], fill=(*color, 120), width=1)
 
 
-def _draw_axis_lines(draw, cx, cy, scale=1.0, color=GREEN, correct=True):
-    """Draw vertical/horizontal reference lines."""
-    s = scale
-    if correct:
-        # Vertical center line (straight)
-        draw.line([(cx, cy - int(145 * s)), (cx, cy + int(10 * s))],
-                  fill=color, width=1)
-        # Horizontal eye line (straight)
-        draw.line([(cx - int(90 * s), cy - int(108 * s)), (cx + int(90 * s), cy - int(108 * s))],
-                  fill=color, width=1)
-    else:
-        # Diagonal lines showing misalignment
-        draw.line([(cx - int(40 * s), cy - int(145 * s)), (cx + int(40 * s), cy - int(100 * s))],
-                  fill=RED, width=2)
+def _badge(draw, cx, y1, correct: bool):
+    color = GREEN if correct else RED
+    sym   = "✓" if correct else "✗"
+    label = "ПРАВИЛЬНО" if correct else "НЕПРАВИЛЬНО"
+    text  = f" {sym}  {label} "
+    f = _f(17)
+    w, h = _tw(draw, text, f)
+    x1, x2 = cx-w//2-10, cx+w//2+10
+    y2 = y1 + h + 10
+    draw.rounded_rectangle([x1, y1, x2, y2], radius=5, fill=color)
+    draw.text((x1+10, y1+5), text, font=f, fill=BG)
+    return y2 + 6
 
-
-def _panel_header(draw, x1, y1, x2, label, is_correct):
-    """Draw the ПРАВИЛЬНО / НЕПРАВИЛЬНО badge."""
-    color = GREEN if is_correct else RED
-    symbol = "✓" if is_correct else "✗"
-    text = f"  {symbol}  {'ПРАВИЛЬНО' if is_correct else 'НЕПРАВИЛЬНО'}  "
-    f = _font(18)
-    bbox = draw.textbbox((0, 0), text, font=f)
-    tw = bbox[2] - bbox[0]
-    th = bbox[3] - bbox[1]
-    cx = (x1 + x2) // 2
-    bx1, bx2 = cx - tw // 2 - 12, cx + tw // 2 + 12
-    by1, by2 = y1 + 10, y1 + 10 + th + 12
-    draw.rounded_rectangle([bx1, by1, bx2, by2], radius=6, fill=color)
-    draw.text((bx1 + 12, by1 + 6), text, font=f, fill=BG)
-    return by2 + 8
-
-
-def _caption(draw, cx, y, text, color=WHITE):
-    """Draw caption text centered at cx."""
-    f = _font(16)
-    lines = text.split("\n")
+def _caption_block(draw, cx, y, lines, color=WHITE):
+    f = _f(15)
     for line in lines:
-        bbox = draw.textbbox((0, 0), line, font=f)
-        tw = bbox[2] - bbox[0]
-        draw.text((cx - tw // 2, y), line, font=f, fill=color)
-        y += 22
+        w, _ = _tw(draw, line, f)
+        draw.text((cx-w//2, y), line, font=f, fill=color)
+        y += 21
     return y
 
+def _divider(draw):
+    draw.line([(IW//2, 55), (IW//2, IH-10)], fill=(40,40,60), width=2)
 
-# ─── Image generators ─────────────────────────────────────────────────────────
-
-def make_image_1_frontal_vs_profile() -> str:
-    """Image 1: Correct frontal vs wrong profile view."""
-    out = os.path.join(ASSETS_DIR, "instr_correct.png")
-    img  = Image.new("RGB", (W, H), BG)
+def _base_image(title: str):
+    img  = Image.new("RGB", (IW, IH), BG)
     draw = ImageDraw.Draw(img)
-
-    # Title
-    _rounded_rect(draw, 0, 0, W, 52, 0, fill=(20, 20, 32))
-    _text_center(draw, 10, "ПРАВИЛЬНАЯ ПОСТАНОВКА", _font(26), GOLD)
-    _text_center(draw, 38, "Лицо строго в камеру — основное требование", _font(16), GREY)
-
-    # Divider
-    draw.line([(W // 2, 60), (W // 2, H - 20)], fill=(45, 45, 65), width=2)
-
-    # LEFT PANEL — CORRECT (frontal)
-    lx = W // 4
-    ly = H // 2 + 20
-    _panel_header(draw, 10, 58, W // 2 - 10, "", True)
-    _draw_axis_lines(draw, lx, ly, scale=1.0, color=GREEN, correct=True)
-    _draw_camera_frame(draw, lx, ly, scale=1.0, color=LBLUE)
-    _draw_human_frontal(draw, lx, ly, scale=1.0, color=WHITE)
-
-    _caption(draw, lx, H - 95,
-             "Лицо смотрит прямо в камеру\nАнфас — все черты видны чётко", GREEN)
-
-    # RIGHT PANEL — WRONG (profile)
-    rx = W * 3 // 4
-    ry = H // 2 + 20
-    _panel_header(draw, W // 2 + 10, 58, W - 10, "", False)
-    _draw_camera_frame(draw, rx, ry, scale=1.0, color=(80, 80, 100))
-    _draw_human_profile(draw, rx, ry, scale=1.0, color=RED, facing_left=True)
-
-    _caption(draw, rx, H - 95,
-             "Профиль или поворот — алгоритм\nне видит обе стороны лица", RED)
-
-    img.save(out, "PNG")
-    return out
+    # Top bar
+    _rr(draw, 0, 0, IW, 50, 0, fill=(16, 16, 26))
+    _tc(draw, IW//2, 10, title, _f(22), GOLD)
+    _divider(draw)
+    return img, draw
 
 
-def make_image_2_tilt_and_hair() -> str:
-    """Image 2: Wrong tilted head vs wrong hair covering face vs correct."""
-    out = os.path.join(ASSETS_DIR, "instr_wrong.png")
-    img  = Image.new("RGB", (W, H), BG)
+# ══════════════════════════════════════════════════════════════════════════════
+# 8 rule images
+# ══════════════════════════════════════════════════════════════════════════════
+
+def _rule1_passport() -> str:
+    """Rule 1: Photo like a passport (shoulders, front-facing)."""
+    img, draw = _base_image("01  КАК НА ПАСПОРТ")
+    cy = IH//2 + 24
+    lx, rx = IW//4, IW*3//4
+
+    # LEFT — wrong: selfie angle / too close
+    _badge(draw, lx, 56, False)
+    h = Human(draw, lx, cy+10, scale=0.82)
+    h.draw_full(color=(180,100,100))
+    # Camera icon too close (large phone icon)
+    draw.rectangle([lx-28, h.ht-55, lx+28, h.ht-20], outline=RED, width=2, fill=(30,18,18))
+    _tc(draw, lx, h.ht-48, "📱", _f(22), RED)
+    # Arrow showing too close
+    draw.line([(lx, h.ht-20), (lx, h.ht-3)], fill=RED, width=3)
+    _caption_block(draw, lx, IH-68, ["Слишком близко — часть лица", "обрезана, пропорции искажены"], RED)
+
+    # RIGHT — correct: full passport style
+    _badge(draw, rx, 56, True)
+    h2 = Human(draw, rx, cy, scale=0.82)
+    h2.draw_guide_lines(GREEN)
+    h2.draw_full(color=WHITE)
+    # Camera icon at correct distance
+    draw.rectangle([rx-18, h2.ht-70, rx+18, h2.ht-40], outline=GREEN, width=2, fill=(16,26,18))
+    _tc(draw, rx, h2.ht-64, "📷", _f(18), GREEN)
+    # Frame around face+shoulders
+    _rr(draw, rx-85, h2.ht-10, rx+85, h2.ht+h2.hh*2+90, 4,
+        outline=(90,200,130), fill=None, lw=2)
+    _caption_block(draw, rx, IH-68, ["Анфас, плечи в кадре,", "лицо строго по центру"], GREEN)
+
+    img.save(p := os.path.join(ASSETS_DIR, "rule1_passport.png"), "PNG")
+    return p
+
+
+def _rule2_frontal() -> str:
+    """Rule 2: Look straight into the camera (not profile)."""
+    img, draw = _base_image("02  СМОТРИТЕ ПРЯМО В КАМЕРУ")
+    cy = IH//2 + 24
+    lx, rx = IW//4, IW*3//4
+
+    _badge(draw, lx, 56, False)
+    h = Human(draw, lx, cy, scale=0.82)
+    h.draw_full(color=(180,80,80), turn_deg=55)
+    # Arrow showing turn
+    ax = lx + int(h.hw * 0.6)
+    ay = h.ht + h.hh
+    for i in range(3):
+        draw.arc([ax+i*4, ay-22, ax+i*4+32, ay+22], -70, 70, fill=RED, width=2)
+    _caption_block(draw, lx, IH-68, ["Поворот головы — анализ", "не видит обе стороны лица"], RED)
+
+    _badge(draw, rx, 56, True)
+    h2 = Human(draw, rx, cy, scale=0.82)
+    h2.draw_guide_lines(GREEN)
+    h2.draw_full(color=WHITE, expression="neutral")
+    # Camera bullseye
+    for r in (30, 22, 14):
+        draw.ellipse([rx-r, h2.ht-55-r, rx+r, h2.ht-55+r], outline=GREEN, width=1)
+    draw.ellipse([rx-5, h2.ht-60, rx+5, h2.ht-50], fill=GREEN)
+    _caption_block(draw, rx, IH-68, ["Глаза смотрят прямо в камеру,", "лицо симметрично по центру"], GREEN)
+
+    img.save(p := os.path.join(ASSETS_DIR, "rule2_frontal.png"), "PNG")
+    return p
+
+
+def _rule3_no_rotation() -> str:
+    """Rule 3: Head straight — no horizontal turns."""
+    img, draw = _base_image("03  ГОЛОВА РОВНО — БЕЗ ПОВОРОТОВ")
+    cy = IH//2 + 24
+    lx, rx = IW//4, IW*3//4
+
+    _badge(draw, lx, 56, False)
+    h = Human(draw, lx, cy, scale=0.82)
+    h.draw_full(color=(180,80,80), turn_deg=35)
+    # Curved rotation arrow
+    draw.arc([lx-50, h.ht+h.hh-38, lx+50, h.ht+h.hh+38], 200, 320, fill=RED, width=3)
+    draw.line([(lx-34, h.ht+h.hh+26), (lx-34, h.ht+h.hh+40)], fill=RED, width=3)
+    draw.line([(lx-34, h.ht+h.hh+26), (lx-20, h.ht+h.hh+26)], fill=RED, width=3)
+    _caption_block(draw, lx, IH-68, ["Горизонтальный поворот головы", "скрывает черты лица"], RED)
+
+    _badge(draw, rx, 56, True)
+    h2 = Human(draw, rx, cy, scale=0.82)
+    h2.draw_guide_lines(GREEN)
+    h2.draw_full(color=WHITE)
+    # Vertical guide arrow
+    draw.line([(rx, h2.ht-12), (rx, h2.ht+h2.hh*2+85)], fill=GREEN, width=2)
+    _caption_block(draw, rx, IH-68, ["Носовая ось строго вертикальна,", "оба уха одинаково видны"], GREEN)
+
+    img.save(p := os.path.join(ASSETS_DIR, "rule3_rotation.png"), "PNG")
+    return p
+
+
+def _rule4_no_tilt() -> str:
+    """Rule 4: No head tilt toward shoulder."""
+    img, draw = _base_image("04  БЕЗ НАКЛОНА К ПЛЕЧУ")
+    cy = IH//2 + 24
+    lx, rx = IW//4, IW*3//4
+
+    _badge(draw, lx, 56, False)
+    h = Human(draw, lx, cy, scale=0.82)
+    h.draw_neck(RED)
+    h.draw_shoulders(RED)
+    h.draw_head(RED, tilt_deg=22)
+    h.draw_face_features(RED, tilt_deg=22, expression="neutral")
+    # Arc arrow showing tilt
+    draw.arc([lx+30, h.ht+h.hh-30, lx+90, h.ht+h.hh+30], -60, 30, fill=RED, width=3)
+    draw.line([(lx+61, h.ht+h.hh-28), (lx+78, h.ht+h.hh-22)], fill=RED, width=3)
+    _caption_block(draw, lx, IH-68, ["Наклон к плечу перекашивает", "все горизонтальные метрики"], RED)
+
+    _badge(draw, rx, 56, True)
+    h2 = Human(draw, rx, cy, scale=0.82)
+    h2.draw_guide_lines(GREEN)
+    h2.draw_full(color=WHITE)
+    # Horizontal eye level line highlight
+    ey = h2.ht + h2.hh - int(12*0.82)
+    draw.line([(rx-72, ey), (rx+72, ey)], fill=GREEN, width=2)
+    _tc(draw, rx+85, ey-8, "—", _f(18), GREEN)
+    _caption_block(draw, rx, IH-68, ["Голова ровная, линия глаз", "строго горизонтальна"], GREEN)
+
+    img.save(p := os.path.join(ASSETS_DIR, "rule4_tilt.png"), "PNG")
+    return p
+
+
+def _rule5_hair() -> str:
+    """Rule 5: Open forehead — hair back."""
+    img, draw = _base_image("05  ЛОБ ДОЛЖЕН БЫТЬ ОТКРЫТ")
+    cy = IH//2 + 24
+    lx, rx = IW//4, IW*3//4
+
+    _badge(draw, lx, 56, False)
+    h = Human(draw, lx, cy, scale=0.82)
+    h.draw_full(color=(180,80,80))
+    h.draw_hair(style="bangs")
+    # Red X over forehead
+    ft = h.ht + int(5*0.82)
+    fb = h.ht + int(28*0.82)
+    draw.line([(lx-22, ft), (lx+22, fb)], fill=RED, width=3)
+    draw.line([(lx+22, ft), (lx-22, fb)], fill=RED, width=3)
+    _caption_block(draw, lx, IH-68, ["Чёлка закрывает лоб —", "алгоритм теряет ключевые точки"], RED)
+
+    _badge(draw, rx, 56, True)
+    h2 = Human(draw, rx, cy, scale=0.82)
+    h2.draw_guide_lines(GREEN)
+    h2.draw_full(color=WHITE)
+    h2.draw_hair(style="open")
+    # Green checkmark over forehead
+    ft2 = h2.ht + int(4*0.82)
+    draw.line([(rx-15, ft2+12), (rx-4, ft2+22), (rx+18, ft2)], fill=GREEN, width=3)
+    _caption_block(draw, rx, IH-68, ["Лоб полностью открыт,", "волосы убраны назад или заколоты"], GREEN)
+
+    img.save(p := os.path.join(ASSETS_DIR, "rule5_hair.png"), "PNG")
+    return p
+
+
+def _rule6_expression() -> str:
+    """Rule 6: Neutral expression — no smiling."""
+    img, draw = _base_image("06  НЕЙТРАЛЬНОЕ ВЫРАЖЕНИЕ ЛИЦА")
+    cy = IH//2 + 24
+    lx, rx = IW//4, IW*3//4
+
+    _badge(draw, lx, 56, False)
+    h = Human(draw, lx, cy, scale=0.82)
+    h.draw_head((180,80,80))
+    h.draw_face_features((180,80,80), expression="smile")
+    h.draw_neck((180,80,80))
+    h.draw_shoulders((180,80,80))
+    _caption_block(draw, lx, IH-68, ["Улыбка смещает точки губ", "и мышцы скул — метрики врут"], RED)
+
+    _badge(draw, rx, 56, True)
+    h2 = Human(draw, rx, cy, scale=0.82)
+    h2.draw_guide_lines(GREEN)
+    h2.draw_full(color=WHITE, expression="neutral")
+    _caption_block(draw, rx, IH-68, ["Расслабленное лицо, рот закрыт,", "мышцы не напряжены"], GREEN)
+
+    img.save(p := os.path.join(ASSETS_DIR, "rule6_expression.png"), "PNG")
+    return p
+
+
+def _rule7_lighting() -> str:
+    """Rule 7: Even front lighting — no harsh shadows."""
+    img, draw = _base_image("07  РОВНОЕ ОСВЕЩЕНИЕ БЕЗ ТЕНЕЙ")
+    cy = IH//2 + 24
+    lx, rx = IW//4, IW*3//4
+
+    _badge(draw, lx, 56, False)
+    h = Human(draw, lx, cy, scale=0.82)
+    h.draw_full(color=(160,160,185))
+    # Side lamp
+    lamp_x, lamp_y = lx+105, 85
+    draw.ellipse([lamp_x-12, lamp_y-12, lamp_x+12, lamp_y+12], fill=RED)
+    for a_deg in range(-50, 110, 30):
+        a = math.radians(a_deg)
+        x1 = lamp_x + int(16*math.cos(a))
+        y1 = lamp_y + int(16*math.sin(a))
+        x2 = lamp_x + int(28*math.cos(a))
+        y2 = lamp_y + int(28*math.sin(a))
+        draw.line([(x1,y1),(x2,y2)], fill=RED, width=2)
+    # Shadow half-overlay
+    sx = lx - h.hw + 4
+    shadow_pts = [(sx, h.ht+2), (lx-2, h.ht+2),
+                  (lx-2, h.ht+h.hh*2-2), (sx, h.ht+h.hh*2-2)]
+    overlay = Image.new("RGBA", img.size, (0,0,0,0))
+    ov_d = ImageDraw.Draw(overlay)
+    ov_d.polygon(shadow_pts, fill=(10,10,18,160))
+    img_rgba = img.convert("RGBA")
+    img_rgba = Image.alpha_composite(img_rgba, overlay)
+    img.paste(img_rgba.convert("RGB"))
     draw = ImageDraw.Draw(img)
+    _caption_block(draw, lx, IH-68, ["Боковой свет — половина лица", "в тени, метрики недостоверны"], RED)
 
-    _rounded_rect(draw, 0, 0, W, 52, 0, fill=(20, 20, 32))
-    _text_center(draw, 10, "ЧАСТЫЕ ОШИБКИ", _font(26), RED)
-    _text_center(draw, 38, "Эти позы дают неверный результат анализа", _font(16), GREY)
+    _badge(draw, rx, 56, True)
+    h2 = Human(draw, rx, cy, scale=0.82)
+    h2.draw_full(color=WHITE)
+    # Sun above face
+    sx2, sy2 = rx, h2.ht - 42
+    draw.ellipse([sx2-14, sy2-14, sx2+14, sy2+14], fill=GOLD)
+    for a_deg in range(0, 360, 40):
+        a = math.radians(a_deg)
+        draw.line([(sx2+int(18*math.cos(a)), sy2+int(18*math.sin(a))),
+                   (sx2+int(30*math.cos(a)), sy2+int(30*math.sin(a)))], fill=GOLD, width=2)
+    # Light cone
+    draw.polygon([(rx-18, sy2+14), (rx+18, sy2+14),
+                  (rx+50, h2.ht), (rx-50, h2.ht)], fill=(30,28,10))
+    _caption_block(draw, rx, IH-68, ["Равномерный свет спереди,", "лицо без теней и бликов"], GREEN)
 
-    # Three panels
-    third = W // 3
-    for i, x in enumerate([third // 2, W // 2, third * 2 + third // 2]):
-        draw.line([(third * i, 56), (third * i, H - 20)], fill=(38, 38, 58), width=2)
-
-    cy = H // 2 + 20
-
-    # Panel 1: Tilted head
-    x1 = third // 2
-    _panel_header(draw, 5, 58, third - 5, "", False)
-    _draw_human_tilted(draw, x1, cy, scale=0.9, tilt_deg=26)
-    _caption(draw, x1, H - 90,
-             "Наклон головы к плечу\nискажает все горизонтали", RED)
-
-    # Panel 2: Hair covering
-    x2 = W // 2
-    _panel_header(draw, third + 5, 58, third * 2 - 5, "", False)
-    _draw_human_frontal(draw, x2, cy, scale=0.9, color=(180, 180, 200))
-    _draw_human_hair(draw, x2, cy, scale=0.9, cover=True)
-    _caption(draw, x2, H - 90,
-             "Волосы закрывают лоб и\nмешают определить точки", RED)
-
-    # Panel 3: Correct — clean, open face
-    x3 = third * 2 + third // 2
-    _panel_header(draw, third * 2 + 5, 58, W - 5, "", True)
-    _draw_axis_lines(draw, x3, cy, scale=0.9, color=GREEN, correct=True)
-    _draw_human_frontal(draw, x3, cy, scale=0.9, color=WHITE)
-    _draw_human_hair(draw, x3, cy, scale=0.9, cover=False)
-    _caption(draw, x3, H - 90,
-             "Голова ровно, лоб открыт\nнейтральное выражение", GREEN)
-
-    img.save(out, "PNG")
-    return out
+    img.save(p := os.path.join(ASSETS_DIR, "rule7_lighting.png"), "PNG")
+    return p
 
 
-def make_image_3_lighting() -> str:
-    """Image 3: Good vs bad lighting."""
-    out = os.path.join(ASSETS_DIR, "instr_lighting.png")
-    img  = Image.new("RGB", (W, H), BG)
+def _rule8_sharpness() -> str:
+    """Rule 8: Sharp photo — no blur."""
+    img, draw = _base_image("08  ЧЁТКОЕ ФОТО БЕЗ РАЗМЫТИЯ")
+    cy = IH//2 + 24
+    lx, rx = IW//4, IW*3//4
+
+    # LEFT — blurry: draw human then apply gaussian blur to a subsection
+    _badge(draw, lx, 56, False)
+
+    # Render left side into a temp surface, blur it
+    tmp = Image.new("RGB", (IW//2, IH), BG)
+    td  = ImageDraw.Draw(tmp)
+    ht = Human(td, IW//4, cy, scale=0.82)
+    ht.draw_full(color=(180,100,100))
+
+    tmp_blurred = tmp.filter(ImageFilter.GaussianBlur(radius=4))
+    img.paste(tmp_blurred.crop((0,0,IW//2,IH)), (0,0))
+
     draw = ImageDraw.Draw(img)
+    _divider(draw)
+    # Re-draw badge (was under blurred layer)
+    _badge(draw, lx, 56, False)
+    # Motion blur lines
+    for yy in (cy - 60, cy - 20, cy + 20):
+        draw.line([(lx-60, yy), (lx+60, yy+4)], fill=(*RED, 120), width=2)
+    _caption_block(draw, lx, IH-68, ["Размытое фото — алгоритм", "не находит точки лица"], RED)
 
-    _rounded_rect(draw, 0, 0, W, 52, 0, fill=(20, 20, 32))
-    _text_center(draw, 10, "ОСВЕЩЕНИЕ И КАЧЕСТВО ФОТО", _font(26), GOLD)
-    _text_center(draw, 38, "Свет спереди — ключ к точному анализу", _font(16), GREY)
+    # RIGHT — sharp
+    _badge(draw, rx, 56, True)
+    h2 = Human(draw, rx, cy, scale=0.82)
+    h2.draw_guide_lines(GREEN)
+    h2.draw_full(color=WHITE)
+    # Sharp detail marks
+    for off in (-28, 0, 28):
+        draw.rectangle([rx+off-3, h2.ht+h2.hh+off//2-3,
+                        rx+off+3, h2.ht+h2.hh+off//2+3], fill=LBLUE)
+    _caption_block(draw, rx, IH-68, ["Резкий снимок, 98 точек лица", "определяются без ошибок"], GREEN)
 
-    draw.line([(W // 2, 60), (W // 2, H - 20)], fill=(45, 45, 65), width=2)
-
-    cy = H // 2 + 20
-
-    # LEFT — CORRECT lighting
-    lx = W // 4
-    _panel_header(draw, 10, 58, W // 2 - 10, "", True)
-
-    # Sun rays from above/front (left panel)
-    sun_x, sun_y = lx, 90
-    draw.ellipse([sun_x - 18, sun_y - 18, sun_x + 18, sun_y + 18], fill=GOLD)
-    for angle_deg in range(0, 360, 40):
-        a = math.radians(angle_deg)
-        x1 = sun_x + int(22 * math.cos(a))
-        y1 = sun_y + int(22 * math.sin(a))
-        x2 = sun_x + int(36 * math.cos(a))
-        y2 = sun_y + int(36 * math.sin(a))
-        draw.line([(x1, y1), (x2, y2)], fill=GOLD, width=3)
-
-    # Light cone going toward face
-    draw.polygon([
-        (sun_x - 20, sun_y + 18),
-        (sun_x + 20, sun_y + 18),
-        (lx + 45, cy - 130),
-        (lx - 45, cy - 130),
-    ], fill=(40, 40, 20))
-
-    _draw_human_frontal(draw, lx, cy, scale=1.0, color=WHITE)
-    # Bright face highlight
-    hw, hh = 38, 48
-    head_top = cy - 130
-    draw.ellipse([lx - hw + 4, head_top + 4, lx + hw - 4, head_top + hh * 2 - 4],
-                 fill=(35, 35, 28))
-
-    _caption(draw, lx, H - 100,
-             "Равномерный свет спереди\nЧёткое фото без теней", GREEN)
-
-    # RIGHT — BAD lighting (side shadow)
-    rx = W * 3 // 4
-    _panel_header(draw, W // 2 + 10, 58, W - 10, "", False)
-
-    # Side lamp (wrong)
-    lamp_x, lamp_y = rx + 100, 110
-    draw.ellipse([lamp_x - 14, lamp_y - 14, lamp_x + 14, lamp_y + 14], fill=RED)
-    for angle_deg in range(-60, 120, 35):
-        a = math.radians(angle_deg)
-        x1 = lamp_x + int(18 * math.cos(a))
-        y1 = lamp_y + int(18 * math.sin(a))
-        x2 = lamp_x + int(30 * math.cos(a))
-        y2 = lamp_y + int(30 * math.sin(a))
-        draw.line([(x1, y1), (x2, y2)], fill=RED, width=2)
-
-    # Shadow overlay on half of face
-    _draw_human_frontal(draw, rx, cy, scale=1.0, color=(160, 160, 180))
-
-    # Dark shadow half
-    head_top_r = cy - 130
-    hw_r, hh_r = 38, 48
-    shadow_pts = [
-        (rx, head_top_r - 2),
-        (rx - hw_r, head_top_r + 20),
-        (rx - hw_r, head_top_r + hh_r * 2 - 10),
-        (rx, head_top_r + hh_r * 2),
-    ]
-    draw.polygon(shadow_pts, fill=(14, 14, 22))
-
-    # X mark
-    draw.line([(rx - hw_r - 5, head_top_r), (rx + 5, head_top_r + hh_r * 2 + 5)],
-              fill=RED, width=3)
-
-    _caption(draw, rx, H - 100,
-             "Боковой свет даёт тени\nПолутёмное лицо — ошибки в метриках", RED)
-
-    img.save(out, "PNG")
-    return out
+    img.save(p := os.path.join(ASSETS_DIR, "rule8_sharpness.png"), "PNG")
+    return p
 
 
-def generate_all_instruction_images():
-    """Generate all instruction images and return their paths."""
+RULE_GENERATORS = [
+    _rule1_passport,
+    _rule2_frontal,
+    _rule3_no_rotation,
+    _rule4_no_tilt,
+    _rule5_hair,
+    _rule6_expression,
+    _rule7_lighting,
+    _rule8_sharpness,
+]
+
+RULE_TITLES = [
+    "КАК НА ПАСПОРТ",
+    "СМОТРИТЕ ПРЯМО В КАМЕРУ",
+    "ГОЛОВА РОВНО — БЕЗ ПОВОРОТОВ",
+    "БЕЗ НАКЛОНА К ПЛЕЧУ",
+    "ЛОБ ДОЛЖЕН БЫТЬ ОТКРЫТ",
+    "НЕЙТРАЛЬНОЕ ВЫРАЖЕНИЕ",
+    "РОВНОЕ ОСВЕЩЕНИЕ БЕЗ ТЕНЕЙ",
+    "ЧЁТКОЕ ФОТО БЕЗ РАЗМЫТИЯ",
+]
+
+RULE_DESCS = [
+    ("Плечи в кадре, лицо по центру,",
+     "как фото на паспорт или документ."),
+    ("Смотрите в объектив, не в сторону.",
+     "Оба глаза должны быть видны одинаково."),
+    ("Нос смотрит строго вертикально.",
+     "Оба уха симметрично видны в кадре."),
+    ("Голова не наклонена к плечу.",
+     "Линия глаз строго горизонтальна."),
+    ("Уберите волосы с лица и лба.",
+     "Линия роста волос должна быть видна."),
+    ("Расслабленное лицо, рот закрыт.",
+     "Не улыбайтесь, не хмурьтесь."),
+    ("Свет падает спереди, равномерно.",
+     "Избегайте теней и засветки."),
+    ("Снимайте на хорошую камеру.",
+     "Фото должно быть резким и чётким."),
+]
+
+
+def generate_all_rule_images() -> list:
+    """Generate all 8 rule images, return list of paths."""
     paths = []
-    for fn in (make_image_1_frontal_vs_profile,
-               make_image_2_tilt_and_hair,
-               make_image_3_lighting):
+    for fn in RULE_GENERATORS:
         try:
             p = fn()
             paths.append(p)
@@ -489,6 +548,13 @@ def generate_all_instruction_images():
     return paths
 
 
+# Legacy names for backward compat
+def generate_all_instruction_images():
+    return generate_all_rule_images()
+
+
 if __name__ == "__main__":
-    paths = generate_all_instruction_images()
-    print("Generated:", paths)
+    paths = generate_all_rule_images()
+    print("Generated:", len(paths), "images")
+    for p in paths:
+        print(" ", p)

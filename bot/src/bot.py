@@ -20,6 +20,7 @@ from telegram.constants import ParseMode
 
 from face_analyzer import analyze_face
 from instruction_images import generate_all_instruction_images
+from instruction_pdf_gen import generate_instruction_pdf
 from pdf_generator import generate_brief_pdf, generate_full_pdf
 from storage import (
     increment_daily_count, get_displayed_daily_count,
@@ -199,7 +200,6 @@ def kb_plans():
 def kb_brief():
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("💳  Оплатить картой", url=TRIBUTE_BRIEF_URL)],
-        [InlineKeyboardButton("✅  Я оплатил(а) — активировать", callback_data="paid_brief")],
         [InlineKeyboardButton("◀️  Назад",          callback_data="menu_analyze"),
          InlineKeyboardButton("🏠  Главное меню",   callback_data="menu_main")],
     ])
@@ -207,7 +207,6 @@ def kb_brief():
 def kb_full():
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("💳  Оплатить картой", url=TRIBUTE_FULL_URL)],
-        [InlineKeyboardButton("✅  Я оплатил(а) — активировать", callback_data="paid_full")],
         [InlineKeyboardButton("◀️  Назад",           callback_data="menu_analyze"),
          InlineKeyboardButton("🏠  Главное меню",    callback_data="menu_main")],
     ])
@@ -280,69 +279,32 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif d == "plan_brief":
         await query.edit_message_text(BRIEF_TEXT, parse_mode=ParseMode.HTML,
                                       reply_markup=kb_brief())
+        await _send_instruction_pdf(query.message.chat_id, query.get_bot())
     elif d == "plan_full":
         await query.edit_message_text(FULL_TEXT, parse_mode=ParseMode.HTML,
                                       reply_markup=kb_full())
+        await _send_instruction_pdf(query.message.chat_id, query.get_bot())
     elif d == "about":
         await query.edit_message_text(ABOUT_TEXT, parse_mode=ParseMode.HTML,
                                       reply_markup=kb_home())
-    elif d in ("paid_brief", "paid_full"):
-        await _handle_self_activation(query, d)
 
 
-async def _handle_self_activation(query, d: str):
-    """Автоактивация после самостоятельной оплаты."""
-    tier = "brief" if d == "paid_brief" else "full"
-    user = query.from_user
-    chat_id = query.message.chat_id
-
-    # Проверяем не активирован ли уже
-    if has_grant_by_chat_id(chat_id):
-        await query.answer("У вас уже активирован разбор — отправьте фото!", show_alert=True)
-        return
-
-    # Выдаём доступ
-    grant_by_chat_id(chat_id, tier)
-    tier_ru = "Краткий разбор" if tier == "brief" else "Полный разбор"
-    tier_emoji = "📋" if tier == "brief" else "📊"
-
-    await query.edit_message_text(
-        f"{tier_emoji} <b>{tier_ru} активирован!</b>\n\n"
-        "Теперь отправьте фото для анализа — следуйте инструкции ниже.",
-        parse_mode=ParseMode.HTML,
-        reply_markup=kb_home())
-
-    # Уведомляем админа
-    admin_id = get_admin_chat_id()
-    if admin_id:
-        uname = f"@{user.username}" if user.username else user.full_name
-        try:
-            await query.get_bot().send_message(
-                admin_id,
-                f"💰 <b>Самоактивация:</b> {uname} (id: <code>{user.id}</code>)\n"
-                f"Тариф: <b>{tier_ru}</b>",
-                parse_mode=ParseMode.HTML)
-        except Exception:
-            pass
-
-    # Отправляем инструкцию с картинками
+async def _send_instruction_pdf(chat_id: int, bot):
+    """Генерирует и отправляет PDF-инструкцию пользователю."""
     try:
-        instr_images = generate_all_instruction_images()
-        from telegram import InputMediaPhoto
-        media_group = []
-        for i, img_path in enumerate(instr_images):
-            if os.path.exists(img_path):
-                with open(img_path, "rb") as f:
-                    caption = "📸 <b>Как сделать правильное фото</b>" if i == 0 else None
-                    media_group.append(InputMediaPhoto(
-                        media=f.read(),
-                        caption=caption,
-                        parse_mode=ParseMode.HTML if caption else None
-                    ))
-        if media_group:
-            await query.get_bot().send_media_group(chat_id, media=media_group)
+        pdf_bytes = await asyncio.get_event_loop().run_in_executor(
+            None, generate_instruction_pdf, None)
+        await bot.send_document(
+            chat_id,
+            document=BytesIO(pdf_bytes),
+            filename="Инструкция по съёмке — Qzels Face Bot.pdf",
+            caption=(
+                "📸 <b>Инструкция по съёмке</b>\n\n"
+                "Прочитайте перед отправкой фото — это напрямую влияет на точность разбора."
+            ),
+            parse_mode=ParseMode.HTML)
     except Exception as e:
-        logger.warning(f"Instruction images error: {e}")
+        logger.warning(f"Instruction PDF send error: {e}")
 
 
 # ════════════════════════════════════════════════════════════════════════════
@@ -387,33 +349,7 @@ async def cmd_grant(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 user_chat_id,
                 _grant_text(tier),
                 parse_mode=ParseMode.HTML)
-
-            # Отправляем картинки-инструкции
-            instr_images = generate_all_instruction_images()
-            if instr_images:
-                from telegram import InputMediaPhoto
-                media_group = []
-                for i, img_path in enumerate(instr_images):
-                    if os.path.exists(img_path):
-                        with open(img_path, "rb") as f:
-                            caption = "📸 <b>Инструкция по съёмке</b>" if i == 0 else None
-                            media_group.append(InputMediaPhoto(
-                                media=f.read(),
-                                caption=caption,
-                                parse_mode=ParseMode.HTML if caption else None
-                            ))
-                if media_group:
-                    await context.bot.send_media_group(user_chat_id, media=media_group)
-
-            # Дополнительно — PDF-инструкция если есть
-            instr_path = os.path.join(ASSETS_DIR, "instruction.pdf")
-            if os.path.exists(instr_path):
-                with open(instr_path, "rb") as f:
-                    await context.bot.send_document(
-                        user_chat_id, document=f,
-                        filename="Инструкция по съёмке — Qzels Face Bot.pdf",
-                        caption="📄 Подробная инструкция (PDF)",
-                        parse_mode=ParseMode.HTML)
+            await _send_instruction_pdf(user_chat_id, context.bot)
         except Exception as e:
             logger.warning(f"Grant notify error for @{username}: {e}")
 
@@ -581,14 +517,6 @@ async def photo_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 caption="📋 <b>Краткий разбор Qzels Face Bot</b>\n\nСпасибо, что используешь Qzels Face Bot! 🚀",
                 parse_mode=ParseMode.HTML)
         else:
-            if _is_admin(user):
-                pdf_b = await loop.run_in_executor(None, generate_brief_pdf, metrics, uname)
-                await context.bot.send_document(
-                    update.effective_chat.id, BytesIO(pdf_b),
-                    filename="Краткий разбор — Qzels Face Bot.pdf",
-                    caption="📋 <b>Краткий разбор</b> (администратор — превью)",
-                    parse_mode=ParseMode.HTML)
-
             pdf_f = await loop.run_in_executor(None, generate_full_pdf, metrics, uname)
             await context.bot.send_document(
                 update.effective_chat.id, BytesIO(pdf_f),
