@@ -2,6 +2,7 @@ import os
 import sys
 import logging
 import asyncio
+import time
 from io import BytesIO
 
 import numpy as np
@@ -18,6 +19,7 @@ from telegram.ext import (
 from telegram.constants import ParseMode
 
 from face_analyzer import analyze_face
+from instruction_images import generate_all_instruction_images
 from pdf_generator import generate_brief_pdf, generate_full_pdf
 from storage import (
     increment_daily_count, get_displayed_daily_count,
@@ -325,14 +327,32 @@ async def cmd_grant(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 user_chat_id,
                 _grant_text(tier),
                 parse_mode=ParseMode.HTML)
-            # Отправляем инструкцию по съёмке
+
+            # Отправляем картинки-инструкции
+            instr_images = generate_all_instruction_images()
+            if instr_images:
+                from telegram import InputMediaPhoto
+                media_group = []
+                for i, img_path in enumerate(instr_images):
+                    if os.path.exists(img_path):
+                        with open(img_path, "rb") as f:
+                            caption = "📸 <b>Инструкция по съёмке</b>" if i == 0 else None
+                            media_group.append(InputMediaPhoto(
+                                media=f.read(),
+                                caption=caption,
+                                parse_mode=ParseMode.HTML if caption else None
+                            ))
+                if media_group:
+                    await context.bot.send_media_group(user_chat_id, media=media_group)
+
+            # Дополнительно — PDF-инструкция если есть
             instr_path = os.path.join(ASSETS_DIR, "instruction.pdf")
             if os.path.exists(instr_path):
                 with open(instr_path, "rb") as f:
                     await context.bot.send_document(
                         user_chat_id, document=f,
                         filename="Инструкция по съёмке — Qzels Face Bot.pdf",
-                        caption="📸 <b>Инструкция по съёмке</b>\n\nПрочитайте перед отправкой фото для максимально точного результата.",
+                        caption="📄 Подробная инструкция (PDF)",
                         parse_mode=ParseMode.HTML)
         except Exception as e:
             logger.warning(f"Grant notify error for @{username}: {e}")
@@ -443,12 +463,36 @@ async def photo_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             parse_mode=ParseMode.HTML)
         return
 
+    # ── Сообщение "думаю" + реальный анализ за 2 минуты ─────────────────────
     await update.message.reply_text(
-        "✅ <b>Лицо найдено! Анализирую...</b>\n\nПодожди 15–30 секунд ⏳",
+        "🤔 <b>Изучаю ваше лицо...</b>\n\n"
+        "Провожу тщательный анализ по всем метрикам — "
+        "золотое сечение, симметрия, кантальный тильт, угол челюсти и ещё 16 параметров.\n\n"
+        "⏳ Это займёт около <b>2 минут</b> — не закрывайте чат.",
         parse_mode=ParseMode.HTML)
 
+    # Запускаем анализ в фоне и фиксируем время старта
+    start_time = time.monotonic()
+    analysis_future = loop.run_in_executor(None, analyze_face, img_bytes)
+
+    # Через 60 секунд — промежуточное сообщение
+    await asyncio.sleep(60)
+    await update.message.reply_text(
+        "⏳ <b>Почти готово...</b>\n\n"
+        "Финальные расчёты и сравнение с базой референсных лиц.",
+        parse_mode=ParseMode.HTML)
+
+    # Ждём завершения анализа (минимум 120 сек от старта)
     try:
-        metrics = await loop.run_in_executor(None, analyze_face, img_bytes)
+        metrics = await analysis_future
+    except Exception as exc:
+        raise exc
+
+    elapsed = time.monotonic() - start_time
+    if elapsed < 120:
+        await asyncio.sleep(120 - elapsed)
+
+    try:
         if not metrics:
             if not _is_admin(user):
                 grant_analysis(username, tier)

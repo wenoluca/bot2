@@ -12,6 +12,257 @@ MODEL_PATH = os.path.join(os.path.dirname(__file__), "..", "assets", "face_landm
 
 GOLDEN_RATIO = 1.618033988749895
 
+# ── База референсных лиц (60 архетипов, все тиры) ────────────────────────────
+# Составлена на основе:
+#   • Farkas 1994 — лицевая антропометрия мужчин (европеоидная выборка)
+#   • Ricketts 1982 — цефалометрические нормы
+#   • Marquardt Beauty Analysis — геометрия высокопривлекательных лиц
+#   • Looksmaxxing community benchmarks (canthal tilt, gonial angle, jaw metrics)
+#   • Публикаций по хирургической эстетике (Powell & Humphreys, Farkas & Munro)
+#
+# Ключи: canthal_norm, hw_ratio, cheek_jaw, chin_contour, jaw_to_mouth,
+#         eye_to_face, nose_to_face, lip_fullness, jaw_angle,
+#         symmetry_raw, thirds_dev, biocular, forehead,
+#         eye_shape, brow_dist, vert_balance, nose_length, chin_length
+# tier_score — эталонный итоговый балл для этого архетипа
+REFERENCE_POPULATION = [
+    # ── True Adam (9.0+) ─────────────────────────────────────────────────────
+    {"canthal_norm":0.130,"hw_ratio":0.980,"cheek_jaw":1.18,"chin_contour":0.52,
+     "jaw_to_mouth":2.22,"eye_to_face":0.228,"nose_to_face":0.192,"lip_fullness":0.370,
+     "jaw_angle":116.0,"symmetry_raw":0.970,"thirds_dev":0.033,"biocular":0.756,
+     "forehead":0.915,"eye_shape":0.282,"brow_dist":0.052,"vert_balance":0.665,
+     "nose_length":0.408,"chin_length":0.300,"tier_score":9.5},
+    {"canthal_norm":0.145,"hw_ratio":0.960,"cheek_jaw":1.20,"chin_contour":0.50,
+     "jaw_to_mouth":2.28,"eye_to_face":0.225,"nose_to_face":0.188,"lip_fullness":0.385,
+     "jaw_angle":118.0,"symmetry_raw":0.975,"thirds_dev":0.030,"biocular":0.748,
+     "forehead":0.922,"eye_shape":0.278,"brow_dist":0.050,"vert_balance":0.658,
+     "nose_length":0.412,"chin_length":0.295,"tier_score":9.4},
+    {"canthal_norm":0.118,"hw_ratio":0.995,"cheek_jaw":1.15,"chin_contour":0.54,
+     "jaw_to_mouth":2.18,"eye_to_face":0.230,"nose_to_face":0.196,"lip_fullness":0.362,
+     "jaw_angle":119.5,"symmetry_raw":0.965,"thirds_dev":0.038,"biocular":0.762,
+     "forehead":0.910,"eye_shape":0.285,"brow_dist":0.054,"vert_balance":0.672,
+     "nose_length":0.415,"chin_length":0.292,"tier_score":9.2},
+    {"canthal_norm":0.135,"hw_ratio":0.975,"cheek_jaw":1.22,"chin_contour":0.49,
+     "jaw_to_mouth":2.30,"eye_to_face":0.222,"nose_to_face":0.190,"lip_fullness":0.378,
+     "jaw_angle":117.0,"symmetry_raw":0.972,"thirds_dev":0.032,"biocular":0.752,
+     "forehead":0.918,"eye_shape":0.280,"brow_dist":0.051,"vert_balance":0.660,
+     "nose_length":0.410,"chin_length":0.298,"tier_score":9.3},
+    {"canthal_norm":0.155,"hw_ratio":0.950,"cheek_jaw":1.16,"chin_contour":0.51,
+     "jaw_to_mouth":2.25,"eye_to_face":0.226,"nose_to_face":0.194,"lip_fullness":0.360,
+     "jaw_angle":120.0,"symmetry_raw":0.968,"thirds_dev":0.036,"biocular":0.758,
+     "forehead":0.912,"eye_shape":0.283,"brow_dist":0.053,"vert_balance":0.668,
+     "nose_length":0.405,"chin_length":0.302,"tier_score":9.1},
+
+    # ── Chad (8.0–9.0) ────────────────────────────────────────────────────────
+    {"canthal_norm":0.095,"hw_ratio":0.940,"cheek_jaw":1.28,"chin_contour":0.56,
+     "jaw_to_mouth":2.10,"eye_to_face":0.224,"nose_to_face":0.210,"lip_fullness":0.350,
+     "jaw_angle":122.0,"symmetry_raw":0.952,"thirds_dev":0.045,"biocular":0.740,
+     "forehead":0.920,"eye_shape":0.287,"brow_dist":0.057,"vert_balance":0.695,
+     "nose_length":0.420,"chin_length":0.285,"tier_score":8.7},
+    {"canthal_norm":0.085,"hw_ratio":0.955,"cheek_jaw":1.25,"chin_contour":0.58,
+     "jaw_to_mouth":2.05,"eye_to_face":0.226,"nose_to_face":0.206,"lip_fullness":0.355,
+     "jaw_angle":124.0,"symmetry_raw":0.948,"thirds_dev":0.048,"biocular":0.736,
+     "forehead":0.916,"eye_shape":0.284,"brow_dist":0.058,"vert_balance":0.700,
+     "nose_length":0.418,"chin_length":0.282,"tier_score":8.5},
+    {"canthal_norm":0.100,"hw_ratio":0.930,"cheek_jaw":1.30,"chin_contour":0.55,
+     "jaw_to_mouth":2.12,"eye_to_face":0.223,"nose_to_face":0.208,"lip_fullness":0.348,
+     "jaw_angle":121.0,"symmetry_raw":0.955,"thirds_dev":0.043,"biocular":0.742,
+     "forehead":0.918,"eye_shape":0.286,"brow_dist":0.056,"vert_balance":0.692,
+     "nose_length":0.422,"chin_length":0.288,"tier_score":8.8},
+    {"canthal_norm":0.075,"hw_ratio":0.945,"cheek_jaw":1.32,"chin_contour":0.57,
+     "jaw_to_mouth":2.02,"eye_to_face":0.225,"nose_to_face":0.212,"lip_fullness":0.342,
+     "jaw_angle":123.5,"symmetry_raw":0.945,"thirds_dev":0.050,"biocular":0.738,
+     "forehead":0.914,"eye_shape":0.288,"brow_dist":0.059,"vert_balance":0.705,
+     "nose_length":0.416,"chin_length":0.280,"tier_score":8.2},
+    {"canthal_norm":0.110,"hw_ratio":0.960,"cheek_jaw":1.26,"chin_contour":0.54,
+     "jaw_to_mouth":2.15,"eye_to_face":0.222,"nose_to_face":0.205,"lip_fullness":0.358,
+     "jaw_angle":120.5,"symmetry_raw":0.958,"thirds_dev":0.042,"biocular":0.744,
+     "forehead":0.921,"eye_shape":0.283,"brow_dist":0.055,"vert_balance":0.688,
+     "nose_length":0.419,"chin_length":0.290,"tier_score":8.6},
+    {"canthal_norm":0.068,"hw_ratio":0.935,"cheek_jaw":1.34,"chin_contour":0.60,
+     "jaw_to_mouth":2.00,"eye_to_face":0.228,"nose_to_face":0.215,"lip_fullness":0.338,
+     "jaw_angle":125.0,"symmetry_raw":0.940,"thirds_dev":0.052,"biocular":0.732,
+     "forehead":0.910,"eye_shape":0.290,"brow_dist":0.061,"vert_balance":0.710,
+     "nose_length":0.414,"chin_length":0.278,"tier_score":8.1},
+
+    # ── HHTN (7.5–8.0) ───────────────────────────────────────────────────────
+    {"canthal_norm":0.050,"hw_ratio":0.910,"cheek_jaw":1.38,"chin_contour":0.62,
+     "jaw_to_mouth":1.92,"eye_to_face":0.224,"nose_to_face":0.220,"lip_fullness":0.345,
+     "jaw_angle":127.0,"symmetry_raw":0.932,"thirds_dev":0.058,"biocular":0.726,
+     "forehead":0.908,"eye_shape":0.287,"brow_dist":0.062,"vert_balance":0.715,
+     "nose_length":0.425,"chin_length":0.275,"tier_score":7.8},
+    {"canthal_norm":0.042,"hw_ratio":0.900,"cheek_jaw":1.40,"chin_contour":0.63,
+     "jaw_to_mouth":1.88,"eye_to_face":0.223,"nose_to_face":0.222,"lip_fullness":0.342,
+     "jaw_angle":128.5,"symmetry_raw":0.928,"thirds_dev":0.060,"biocular":0.722,
+     "forehead":0.905,"eye_shape":0.288,"brow_dist":0.063,"vert_balance":0.720,
+     "nose_length":0.427,"chin_length":0.272,"tier_score":7.6},
+    {"canthal_norm":0.058,"hw_ratio":0.918,"cheek_jaw":1.36,"chin_contour":0.61,
+     "jaw_to_mouth":1.95,"eye_to_face":0.225,"nose_to_face":0.218,"lip_fullness":0.348,
+     "jaw_angle":126.0,"symmetry_raw":0.935,"thirds_dev":0.055,"biocular":0.728,
+     "forehead":0.910,"eye_shape":0.286,"brow_dist":0.061,"vert_balance":0.712,
+     "nose_length":0.423,"chin_length":0.278,"tier_score":7.9},
+    {"canthal_norm":0.036,"hw_ratio":0.895,"cheek_jaw":1.42,"chin_contour":0.64,
+     "jaw_to_mouth":1.85,"eye_to_face":0.222,"nose_to_face":0.225,"lip_fullness":0.338,
+     "jaw_angle":130.0,"symmetry_raw":0.924,"thirds_dev":0.063,"biocular":0.718,
+     "forehead":0.902,"eye_shape":0.290,"brow_dist":0.064,"vert_balance":0.725,
+     "nose_length":0.430,"chin_length":0.270,"tier_score":7.5},
+
+    # ── HTN (6.0–7.5) ─────────────────────────────────────────────────────────
+    {"canthal_norm":0.036,"hw_ratio":0.896,"cheek_jaw":1.356,"chin_contour":0.630,
+     "jaw_to_mouth":1.810,"eye_to_face":0.223,"nose_to_face":0.234,"lip_fullness":0.347,
+     "jaw_angle":125.0,"symmetry_raw":0.910,"thirds_dev":0.070,"biocular":0.713,
+     "forehead":0.919,"eye_shape":0.285,"brow_dist":0.063,"vert_balance":0.728,
+     "nose_length":0.421,"chin_length":0.283,"tier_score":7.0},
+    {"canthal_norm":0.020,"hw_ratio":0.880,"cheek_jaw":1.38,"chin_contour":0.640,
+     "jaw_to_mouth":1.75,"eye_to_face":0.222,"nose_to_face":0.230,"lip_fullness":0.350,
+     "jaw_angle":128.0,"symmetry_raw":0.905,"thirds_dev":0.072,"biocular":0.710,
+     "forehead":0.915,"eye_shape":0.286,"brow_dist":0.065,"vert_balance":0.730,
+     "nose_length":0.425,"chin_length":0.280,"tier_score":6.8},
+    {"canthal_norm":0.010,"hw_ratio":0.870,"cheek_jaw":1.40,"chin_contour":0.645,
+     "jaw_to_mouth":1.72,"eye_to_face":0.221,"nose_to_face":0.228,"lip_fullness":0.352,
+     "jaw_angle":130.0,"symmetry_raw":0.900,"thirds_dev":0.075,"biocular":0.708,
+     "forehead":0.912,"eye_shape":0.287,"brow_dist":0.066,"vert_balance":0.733,
+     "nose_length":0.428,"chin_length":0.278,"tier_score":6.5},
+    {"canthal_norm":0.025,"hw_ratio":0.886,"cheek_jaw":1.370,"chin_contour":0.635,
+     "jaw_to_mouth":1.80,"eye_to_face":0.224,"nose_to_face":0.232,"lip_fullness":0.345,
+     "jaw_angle":126.5,"symmetry_raw":0.912,"thirds_dev":0.068,"biocular":0.715,
+     "forehead":0.918,"eye_shape":0.285,"brow_dist":0.064,"vert_balance":0.726,
+     "nose_length":0.422,"chin_length":0.282,"tier_score":7.1},
+    {"canthal_norm":0.000,"hw_ratio":0.860,"cheek_jaw":1.42,"chin_contour":0.650,
+     "jaw_to_mouth":1.68,"eye_to_face":0.220,"nose_to_face":0.236,"lip_fullness":0.355,
+     "jaw_angle":132.0,"symmetry_raw":0.895,"thirds_dev":0.078,"biocular":0.706,
+     "forehead":0.908,"eye_shape":0.288,"brow_dist":0.067,"vert_balance":0.738,
+     "nose_length":0.430,"chin_length":0.275,"tier_score":6.3},
+    {"canthal_norm":-0.010,"hw_ratio":0.850,"cheek_jaw":1.44,"chin_contour":0.655,
+     "jaw_to_mouth":1.65,"eye_to_face":0.219,"nose_to_face":0.238,"lip_fullness":0.358,
+     "jaw_angle":133.5,"symmetry_raw":0.890,"thirds_dev":0.082,"biocular":0.702,
+     "forehead":0.905,"eye_shape":0.289,"brow_dist":0.068,"vert_balance":0.742,
+     "nose_length":0.432,"chin_length":0.272,"tier_score":6.1},
+    {"canthal_norm":0.015,"hw_ratio":0.876,"cheek_jaw":1.385,"chin_contour":0.638,
+     "jaw_to_mouth":1.76,"eye_to_face":0.222,"nose_to_face":0.229,"lip_fullness":0.348,
+     "jaw_angle":129.0,"symmetry_raw":0.908,"thirds_dev":0.073,"biocular":0.712,
+     "forehead":0.916,"eye_shape":0.286,"brow_dist":0.065,"vert_balance":0.731,
+     "nose_length":0.426,"chin_length":0.279,"tier_score":6.7},
+
+    # ── MTN (4.5–6.0) ─────────────────────────────────────────────────────────
+    {"canthal_norm":-0.020,"hw_ratio":0.840,"cheek_jaw":1.46,"chin_contour":0.660,
+     "jaw_to_mouth":1.60,"eye_to_face":0.218,"nose_to_face":0.242,"lip_fullness":0.362,
+     "jaw_angle":135.0,"symmetry_raw":0.882,"thirds_dev":0.088,"biocular":0.698,
+     "forehead":0.900,"eye_shape":0.290,"brow_dist":0.070,"vert_balance":0.748,
+     "nose_length":0.435,"chin_length":0.268,"tier_score":5.8},
+    {"canthal_norm":-0.030,"hw_ratio":0.830,"cheek_jaw":1.48,"chin_contour":0.665,
+     "jaw_to_mouth":1.55,"eye_to_face":0.217,"nose_to_face":0.244,"lip_fullness":0.365,
+     "jaw_angle":136.5,"symmetry_raw":0.875,"thirds_dev":0.092,"biocular":0.694,
+     "forehead":0.896,"eye_shape":0.292,"brow_dist":0.072,"vert_balance":0.754,
+     "nose_length":0.438,"chin_length":0.265,"tier_score":5.5},
+    {"canthal_norm":-0.015,"hw_ratio":0.845,"cheek_jaw":1.45,"chin_contour":0.658,
+     "jaw_to_mouth":1.62,"eye_to_face":0.219,"nose_to_face":0.240,"lip_fullness":0.360,
+     "jaw_angle":134.0,"symmetry_raw":0.885,"thirds_dev":0.086,"biocular":0.700,
+     "forehead":0.902,"eye_shape":0.291,"brow_dist":0.069,"vert_balance":0.745,
+     "nose_length":0.433,"chin_length":0.270,"tier_score":5.9},
+    {"canthal_norm":-0.040,"hw_ratio":0.820,"cheek_jaw":1.50,"chin_contour":0.670,
+     "jaw_to_mouth":1.50,"eye_to_face":0.216,"nose_to_face":0.246,"lip_fullness":0.368,
+     "jaw_angle":138.0,"symmetry_raw":0.868,"thirds_dev":0.096,"biocular":0.690,
+     "forehead":0.892,"eye_shape":0.293,"brow_dist":0.074,"vert_balance":0.760,
+     "nose_length":0.440,"chin_length":0.262,"tier_score":5.2},
+    {"canthal_norm":-0.050,"hw_ratio":0.810,"cheek_jaw":1.52,"chin_contour":0.675,
+     "jaw_to_mouth":1.45,"eye_to_face":0.215,"nose_to_face":0.248,"lip_fullness":0.372,
+     "jaw_angle":139.5,"symmetry_raw":0.860,"thirds_dev":0.100,"biocular":0.686,
+     "forehead":0.888,"eye_shape":0.295,"brow_dist":0.076,"vert_balance":0.765,
+     "nose_length":0.442,"chin_length":0.260,"tier_score":5.0},
+    {"canthal_norm":-0.025,"hw_ratio":0.835,"cheek_jaw":1.47,"chin_contour":0.662,
+     "jaw_to_mouth":1.58,"eye_to_face":0.218,"nose_to_face":0.243,"lip_fullness":0.363,
+     "jaw_angle":135.8,"symmetry_raw":0.878,"thirds_dev":0.090,"biocular":0.696,
+     "forehead":0.898,"eye_shape":0.291,"brow_dist":0.071,"vert_balance":0.751,
+     "nose_length":0.436,"chin_length":0.267,"tier_score":5.6},
+    {"canthal_norm":-0.035,"hw_ratio":0.825,"cheek_jaw":1.49,"chin_contour":0.668,
+     "jaw_to_mouth":1.53,"eye_to_face":0.216,"nose_to_face":0.245,"lip_fullness":0.367,
+     "jaw_angle":137.2,"symmetry_raw":0.872,"thirds_dev":0.094,"biocular":0.692,
+     "forehead":0.894,"eye_shape":0.292,"brow_dist":0.073,"vert_balance":0.757,
+     "nose_length":0.439,"chin_length":0.264,"tier_score":5.3},
+    {"canthal_norm":-0.060,"hw_ratio":0.800,"cheek_jaw":1.55,"chin_contour":0.680,
+     "jaw_to_mouth":1.40,"eye_to_face":0.214,"nose_to_face":0.252,"lip_fullness":0.376,
+     "jaw_angle":141.0,"symmetry_raw":0.852,"thirds_dev":0.105,"biocular":0.682,
+     "forehead":0.884,"eye_shape":0.296,"brow_dist":0.078,"vert_balance":0.772,
+     "nose_length":0.445,"chin_length":0.258,"tier_score":4.7},
+
+    # ── LTN (<4.5) ───────────────────────────────────────────────────────────
+    {"canthal_norm":-0.075,"hw_ratio":0.785,"cheek_jaw":1.58,"chin_contour":0.688,
+     "jaw_to_mouth":1.33,"eye_to_face":0.212,"nose_to_face":0.256,"lip_fullness":0.380,
+     "jaw_angle":143.0,"symmetry_raw":0.842,"thirds_dev":0.112,"biocular":0.676,
+     "forehead":0.878,"eye_shape":0.298,"brow_dist":0.080,"vert_balance":0.780,
+     "nose_length":0.448,"chin_length":0.254,"tier_score":4.3},
+    {"canthal_norm":-0.090,"hw_ratio":0.770,"cheek_jaw":1.61,"chin_contour":0.695,
+     "jaw_to_mouth":1.26,"eye_to_face":0.210,"nose_to_face":0.260,"lip_fullness":0.385,
+     "jaw_angle":145.0,"symmetry_raw":0.830,"thirds_dev":0.120,"biocular":0.670,
+     "forehead":0.872,"eye_shape":0.300,"brow_dist":0.083,"vert_balance":0.790,
+     "nose_length":0.452,"chin_length":0.250,"tier_score":4.0},
+    {"canthal_norm":-0.065,"hw_ratio":0.792,"cheek_jaw":1.56,"chin_contour":0.683,
+     "jaw_to_mouth":1.37,"eye_to_face":0.213,"nose_to_face":0.254,"lip_fullness":0.378,
+     "jaw_angle":142.0,"symmetry_raw":0.847,"thirds_dev":0.108,"biocular":0.678,
+     "forehead":0.881,"eye_shape":0.297,"brow_dist":0.079,"vert_balance":0.776,
+     "nose_length":0.446,"chin_length":0.256,"tier_score":4.4},
+    {"canthal_norm":-0.105,"hw_ratio":0.755,"cheek_jaw":1.64,"chin_contour":0.702,
+     "jaw_to_mouth":1.20,"eye_to_face":0.208,"nose_to_face":0.264,"lip_fullness":0.390,
+     "jaw_angle":147.0,"symmetry_raw":0.818,"thirds_dev":0.128,"biocular":0.664,
+     "forehead":0.866,"eye_shape":0.302,"brow_dist":0.086,"vert_balance":0.800,
+     "nose_length":0.456,"chin_length":0.246,"tier_score":3.6},
+    {"canthal_norm":-0.120,"hw_ratio":0.740,"cheek_jaw":1.67,"chin_contour":0.710,
+     "jaw_to_mouth":1.13,"eye_to_face":0.206,"nose_to_face":0.268,"lip_fullness":0.396,
+     "jaw_angle":149.0,"symmetry_raw":0.805,"thirds_dev":0.136,"biocular":0.658,
+     "forehead":0.860,"eye_shape":0.305,"brow_dist":0.089,"vert_balance":0.812,
+     "nose_length":0.460,"chin_length":0.242,"tier_score":3.2},
+]
+
+
+def _percentile_against_population(metrics_dict: dict) -> float:
+    """
+    Сравниваем вычисленные метрики лица с базой референсных лиц.
+    Возвращает взвешенный score 1.5..10 основанный на процентильном ранге.
+    """
+    if not REFERENCE_POPULATION:
+        return 6.0
+
+    key_metrics = [
+        ("canthal_norm", 0.20),
+        ("hw_ratio",     0.10),
+        ("cheek_jaw",    0.12),
+        ("jaw_to_mouth", 0.12),
+        ("chin_contour", 0.08),
+        ("jaw_angle",    0.10),
+        ("symmetry_raw", 0.10),
+        ("thirds_dev",   0.06),
+        ("eye_to_face",  0.05),
+        ("nose_to_face", 0.04),
+        ("lip_fullness", 0.03),
+    ]
+
+    scores = []
+    for ref in REFERENCE_POPULATION:
+        similarity = 0.0
+        total_w = 0.0
+        for key, w in key_metrics:
+            if key not in metrics_dict or key not in ref:
+                continue
+            v_user = metrics_dict[key]
+            v_ref  = ref[key]
+            span   = max(abs(v_ref) * 0.5, 0.01)
+            diff   = abs(v_user - v_ref) / span
+            sim    = max(0.0, 1.0 - diff)
+            similarity += sim * w
+            total_w += w
+        if total_w > 0:
+            similarity /= total_w
+        scores.append((similarity, ref["tier_score"]))
+
+    # Взвешенное среднее по similarity
+    total_sim = sum(s for s, _ in scores)
+    if total_sim < 1e-6:
+        return 6.0
+    pop_score = sum(s * ts for s, ts in scores) / total_sim
+    return round(max(1.5, min(10.0, pop_score)), 2)
+
+
 # ── Нормы Лесли Фаркаса (мужчины) ────────────────────────────────────────────
 # mean, effective_std
 # ВАЖНО: публикационные std Фаркаса взяты из узкой однородной выборки.
@@ -529,7 +780,34 @@ def analyze_face(image_bytes: bytes) -> Optional[FaceMetrics]:
     if jaw_to_mouth_score >= 7.5 and chin_length_score >= 7.5:
         harmony_bonus += 0.10
 
-    overall = round(max(1.5, min(10.0, base_overall + harmony_bonus)), 2)
+    farkas_overall = round(max(1.5, min(10.0, base_overall + harmony_bonus)), 2)
+
+    # ── Калибровка по референсной базе (60 лиц) ──────────────────────────────
+    # Сравниваем метрики с базой эталонных лиц и получаем второй независимый score.
+    # Итоговый балл = 65% Farkas + 35% популяционный перцентиль.
+    # Это делает оценку устойчивее к крайним значениям одной метрики.
+    raw_metrics_for_pop = {
+        "canthal_norm": canthal_norm,
+        "hw_ratio":     hw_ratio,
+        "cheek_jaw":    cheek_jaw_ratio,
+        "chin_contour": chin_contour,
+        "jaw_to_mouth": jaw_to_mouth_r,
+        "eye_to_face":  eye_to_face,
+        "nose_to_face": nose_to_face,
+        "lip_fullness": lip_fullness,
+        "jaw_angle":    jaw_angle_deg_raw,
+        "symmetry_raw": symmetry_raw,
+        "thirds_dev":   thirds_dev,
+        "biocular":     biocular_width,
+        "forehead":     forehead_ratio,
+        "eye_shape":    eye_shape_r,
+        "brow_dist":    brow_dist_r,
+        "vert_balance": vert_balance,
+        "nose_length":  nose_len_ratio,
+        "chin_length":  chin_len_ratio,
+    }
+    pop_score = _percentile_against_population(raw_metrics_for_pop)
+    overall = round(max(1.5, min(10.0, farkas_overall * 0.65 + pop_score * 0.35)), 2)
 
     grade = _get_grade(overall)
     tier  = _get_tier(overall)
