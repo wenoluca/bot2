@@ -176,18 +176,53 @@ async def _run_analysis_for_user(
     increment_daily_count()
 
 
-async def _timeout_review(app, user_id: int, user_chat_id: int, file_id: str, tier: str, user_name: str):
-    await asyncio.sleep(REVIEW_TIMEOUT)
+async def _timeout_no_response(app, user_id: int, user_chat_id: int, file_id: str, tier: str, user_name: str):
+    """Срабатывает через 60 сек если admin не ответил ни на один вопрос."""
+    await asyncio.sleep(60)
     reviews = app.bot_data.get("reviews", {})
-    if user_id not in reviews:
+    review  = reviews.get(user_id)
+    if not review:
         return
+    if review.get("started"):
+        return  # уже начал отвечать — не трогаем
+    # Отменяем max-duration задачу
+    task_max = review.get("task_max")
+    if task_max:
+        task_max.cancel()
     reviews.pop(user_id, None)
-    logger.info(f"Review timeout for user {user_id} — автоанализ")
+    logger.info(f"No-response timeout for user {user_id} — auto-analysis")
     loop = asyncio.get_event_loop()
     try:
         await _run_analysis_for_user(app.bot, user_chat_id, file_id, tier, user_name, loop)
     except Exception as e:
-        logger.exception(f"Timeout fallback error for {user_id}: {e}")
+        logger.exception(f"No-response fallback error for {user_id}: {e}")
+        try:
+            await app.bot.send_message(user_chat_id, "❌ Что-то пошло не так. Свяжитесь с поддержкой.")
+        except Exception:
+            pass
+
+
+async def _timeout_max_duration(app, user_id: int, user_chat_id: int, file_id: str, tier: str, user_name: str):
+    """Срабатывает через 4 минуты — финализирует с теми оценками что есть."""
+    await asyncio.sleep(240)
+    reviews = app.bot_data.get("reviews", {})
+    review  = reviews.get(user_id)
+    if not review:
+        return
+    scores = dict(review.get("scores", {}))
+    task_no_resp = review.get("task_no_resp")
+    if task_no_resp:
+        task_no_resp.cancel()
+    reviews.pop(user_id, None)
+    logger.info(f"Max-duration timeout for user {user_id} — finalizing with {len(scores)} scores")
+    loop = asyncio.get_event_loop()
+    try:
+        await _run_analysis_for_user(
+            app.bot, user_chat_id, file_id, tier, user_name, loop,
+            scores if scores else None,
+        )
+    except Exception as e:
+        logger.exception(f"Max-duration fallback error for {user_id}: {e}")
         try:
             await app.bot.send_message(user_chat_id, "❌ Что-то пошло не так. Свяжитесь с поддержкой.")
         except Exception:
@@ -533,10 +568,8 @@ async def _forward_to_admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def photo_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user = update.effective_user
+    user     = update.effective_user
     username = (user.username or "").lower()
-
-    await _forward_to_admin(update, context)
 
     tier = None
     if _is_admin(user):
@@ -575,6 +608,64 @@ async def photo_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             parse_mode=ParseMode.HTML)
         return
 
+    uname        = user.username or user.first_name or "user"
+    uname_display = f"@{user.username}" if user.username else uname
+    file_id      = update.message.photo[-1].file_id
+    admin_id     = get_admin_chat_id()
+
+    # ── Ручная проверка администратором (только для обычных пользователей) ──
+    if admin_id and not _is_admin(user):
+        await update.message.reply_text(
+            "✅ <b>Лицо найдено!</b>\n\n"
+            "⏳ Твоё фото отправлено эксперту на проверку.\n"
+            "Ожидай результат — обычно <b>1–4 минуты</b>. "
+            "Результат придёт автоматически! 🔍",
+            parse_mode=ParseMode.HTML,
+        )
+
+        tier_ru = "Краткий" if tier == "brief" else "Полный"
+        await context.bot.send_photo(
+            admin_id,
+            photo=file_id,
+            caption=(
+                f"📸 <b>Новый запрос на разбор</b>\n\n"
+                f"👤 Пользователь: {uname_display}\n"
+                f"📋 Тариф: <b>{tier_ru} разбор</b>\n\n"
+                f"⏱ У тебя <b>4 минуты</b> на оценку всех метрик.\n"
+                f"Если не ответишь на первый вопрос в течение <b>1 минуты</b> — "
+                f"бот оценит автоматически."
+            ),
+            parse_mode=ParseMode.HTML,
+        )
+
+        msg_id = await _send_metric_question(
+            context.bot, admin_id, user.id, 0, uname_display,
+        )
+
+        app     = context.application
+        reviews = app.bot_data.setdefault("reviews", {})
+        reviews[user.id] = {
+            "file_id":      file_id,
+            "tier":         tier,
+            "user_chat_id": update.effective_chat.id,
+            "user_name":    uname,
+            "scores":       {},
+            "current_idx":  0,
+            "admin_msg_id": msg_id,
+            "started":      False,
+        }
+
+        task_no_resp = asyncio.create_task(
+            _timeout_no_response(app, user.id, update.effective_chat.id, file_id, tier, uname)
+        )
+        task_max = asyncio.create_task(
+            _timeout_max_duration(app, user.id, update.effective_chat.id, file_id, tier, uname)
+        )
+        reviews[user.id]["task_no_resp"] = task_no_resp
+        reviews[user.id]["task_max"]     = task_max
+        return
+
+    # ── Прямой автоанализ (для администратора или если нет admin_id) ────────
     await update.message.reply_text(
         "✅ <b>Лицо найдено! Анализирую...</b>\n\nПодожди 15–30 секунд ⏳",
         parse_mode=ParseMode.HTML)
@@ -587,9 +678,6 @@ async def photo_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text("❌ Анализ не удался. Попробуй другое фото.")
             return
 
-        uname = user.username or user.first_name or "user"
-
-        # ── Предупреждение если определён женский пол ────────────────────────
         if metrics.likely_female:
             await update.message.reply_text(
                 "⚠️ <b>Внимание!</b>\n\n"
@@ -636,6 +724,93 @@ async def photo_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 # ════════════════════════════════════════════════════════════════════════════
+#  Ручная оценка метрик администратором
+# ════════════════════════════════════════════════════════════════════════════
+
+async def review_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+
+    if not _is_admin(update.effective_user):
+        return
+
+    # Формат: rev:{user_id}:{metric_idx}:{score}
+    parts = query.data.split(":")
+    if len(parts) != 4:
+        return
+    _, user_id_str, idx_str, score_str = parts
+    user_id    = int(user_id_str)
+    metric_idx = int(idx_str)
+    score      = int(score_str)
+
+    reviews = context.application.bot_data.get("reviews", {})
+    review  = reviews.get(user_id)
+    if not review:
+        await query.edit_message_text("⚠️ Этот запрос уже завершён или истёк.", reply_markup=None)
+        return
+
+    # Первый ответ — отменяем таймер «нет ответа»
+    if not review.get("started"):
+        review["started"] = True
+        task_no_resp = review.get("task_no_resp")
+        if task_no_resp:
+            task_no_resp.cancel()
+
+    # Сохраняем оценку
+    metric_key = REVIEW_METRICS[metric_idx][0]
+    review["scores"][metric_key] = score
+
+    next_idx = metric_idx + 1
+    if next_idx < len(REVIEW_METRICS):
+        review["current_idx"] = next_idx
+        await _send_metric_question(
+            context.bot, update.effective_chat.id,
+            user_id, next_idx, review["user_name"],
+            query.message.message_id,
+        )
+    else:
+        # Все метрики оценены — отменяем max-duration таймер и финализируем
+        task_max = review.get("task_max")
+        if task_max:
+            task_max.cancel()
+        scores = dict(review["scores"])
+        reviews.pop(user_id, None)
+
+        avg        = sum(scores.values()) / len(scores)
+        tier_label = _manual_tier(avg)
+
+        await query.edit_message_text(
+            f"✅ <b>Оценка завершена!</b>\n\n"
+            f"📊 Средний балл: <b>{avg:.1f}/10</b>\n"
+            f"🏆 Тир: <b>{tier_label}</b>\n\n"
+            f"⚙️ Генерирую отчёт для пользователя...",
+            parse_mode=ParseMode.HTML,
+            reply_markup=None,
+        )
+
+        loop = asyncio.get_event_loop()
+        try:
+            await _run_analysis_for_user(
+                context.bot,
+                review["user_chat_id"],
+                review["file_id"],
+                review["tier"],
+                review["user_name"],
+                loop,
+                scores,
+            )
+        except Exception as e:
+            logger.exception(f"Manual review analysis error for {user_id}: {e}")
+            try:
+                await context.bot.send_message(
+                    review["user_chat_id"],
+                    "❌ Что-то пошло не так. Свяжитесь с поддержкой.",
+                )
+            except Exception:
+                pass
+
+
+# ════════════════════════════════════════════════════════════════════════════
 #  Текстовые сообщения
 # ════════════════════════════════════════════════════════════════════════════
 
@@ -655,6 +830,7 @@ def main():
     app.add_handler(CommandHandler("start",    start))
     app.add_handler(CommandHandler("grant",    cmd_grant))
     app.add_handler(CommandHandler("announce", cmd_announce))
+    app.add_handler(CallbackQueryHandler(review_callback_handler, pattern=r"^rev:"))
     app.add_handler(CallbackQueryHandler(callback_handler))
     app.add_handler(MessageHandler(filters.PHOTO, photo_handler))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, text_handler))
