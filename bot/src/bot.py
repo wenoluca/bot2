@@ -75,7 +75,8 @@ def _main_text() -> str:
         "<blockquote>"
         "💼 <b>Твой баланс:</b> 0 разборов\n"
         f"📊 <b>Сегодня пользователи сделали разборов:</b> {daily}"
-        "</blockquote>"
+        "</blockquote>\n\n"
+        "<i>Бот разработан @facedex_support</i>"
     )
 
 
@@ -225,8 +226,19 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         save_admin_chat_id(update.effective_chat.id)
         logger.info(f"Admin chat_id: {update.effective_chat.id}")
 
-    await update.message.reply_text(
-        _main_text(), parse_mode=ParseMode.HTML, reply_markup=kb_main())
+    example_photo_path = os.path.join(ASSETS_DIR, "example_face.jpg")
+    if os.path.exists(example_photo_path):
+        with open(example_photo_path, "rb") as f:
+            await context.bot.send_photo(
+                update.effective_chat.id,
+                photo=f,
+                caption=_main_text(),
+                parse_mode=ParseMode.HTML,
+                reply_markup=kb_main(),
+            )
+    else:
+        await update.message.reply_text(
+            _main_text(), parse_mode=ParseMode.HTML, reply_markup=kb_main())
     await _send_example_pdfs(update.effective_chat.id, context)
 
 
