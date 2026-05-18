@@ -37,8 +37,8 @@ BOT_TOKEN  = os.environ["TELEGRAM_BOT_TOKEN"]
 MODEL_PATH = os.path.join(os.path.dirname(__file__), "..", "assets", "face_landmarker.task")
 ASSETS_DIR = os.path.join(os.path.dirname(__file__), "..", "assets")
 
-TRIBUTE_BRIEF_URL = "https://t.me/tribute/app?startapp=dKmE"
-TRIBUTE_FULL_URL  = "https://t.me/tribute/app?startapp=dKmF"
+TRIBUTE_BRIEF_URL = "https://t.me/tribute/app?startapp=sVo7"
+TRIBUTE_FULL_URL  = "https://t.me/tribute/app?startapp=sVo8"
 SUPPORT_URL       = "https://t.me/facedex_support"
 ADMIN_USERNAME    = "facedex_support"
 
