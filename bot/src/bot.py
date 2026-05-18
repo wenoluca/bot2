@@ -24,6 +24,7 @@ from pdf_generator import generate_brief_pdf, generate_full_pdf
 from storage import (
     increment_daily_count, get_displayed_daily_count,
     save_admin_chat_id, get_admin_chat_id,
+    grant_by_chat_id, consume_grant_by_chat_id, has_grant_by_chat_id,
     grant_analysis, consume_grant, get_grant,
     register_user, get_all_user_ids,
     save_user_chat_id, get_chat_id_by_username,
@@ -198,6 +199,7 @@ def kb_plans():
 def kb_brief():
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("💳  Оплатить картой", url=TRIBUTE_BRIEF_URL)],
+        [InlineKeyboardButton("✅  Я оплатил(а) — активировать", callback_data="paid_brief")],
         [InlineKeyboardButton("◀️  Назад",          callback_data="menu_analyze"),
          InlineKeyboardButton("🏠  Главное меню",   callback_data="menu_main")],
     ])
@@ -205,6 +207,7 @@ def kb_brief():
 def kb_full():
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("💳  Оплатить картой", url=TRIBUTE_FULL_URL)],
+        [InlineKeyboardButton("✅  Я оплатил(а) — активировать", callback_data="paid_full")],
         [InlineKeyboardButton("◀️  Назад",           callback_data="menu_analyze"),
          InlineKeyboardButton("🏠  Главное меню",    callback_data="menu_main")],
     ])
@@ -283,6 +286,63 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif d == "about":
         await query.edit_message_text(ABOUT_TEXT, parse_mode=ParseMode.HTML,
                                       reply_markup=kb_home())
+    elif d in ("paid_brief", "paid_full"):
+        await _handle_self_activation(query, d)
+
+
+async def _handle_self_activation(query, d: str):
+    """Автоактивация после самостоятельной оплаты."""
+    tier = "brief" if d == "paid_brief" else "full"
+    user = query.from_user
+    chat_id = query.message.chat_id
+
+    # Проверяем не активирован ли уже
+    if has_grant_by_chat_id(chat_id):
+        await query.answer("У вас уже активирован разбор — отправьте фото!", show_alert=True)
+        return
+
+    # Выдаём доступ
+    grant_by_chat_id(chat_id, tier)
+    tier_ru = "Краткий разбор" if tier == "brief" else "Полный разбор"
+    tier_emoji = "📋" if tier == "brief" else "📊"
+
+    await query.edit_message_text(
+        f"{tier_emoji} <b>{tier_ru} активирован!</b>\n\n"
+        "Теперь отправьте фото для анализа — следуйте инструкции ниже.",
+        parse_mode=ParseMode.HTML,
+        reply_markup=kb_home())
+
+    # Уведомляем админа
+    admin_id = get_admin_chat_id()
+    if admin_id:
+        uname = f"@{user.username}" if user.username else user.full_name
+        try:
+            await query.get_bot().send_message(
+                admin_id,
+                f"💰 <b>Самоактивация:</b> {uname} (id: <code>{user.id}</code>)\n"
+                f"Тариф: <b>{tier_ru}</b>",
+                parse_mode=ParseMode.HTML)
+        except Exception:
+            pass
+
+    # Отправляем инструкцию с картинками
+    try:
+        instr_images = generate_all_instruction_images()
+        from telegram import InputMediaPhoto
+        media_group = []
+        for i, img_path in enumerate(instr_images):
+            if os.path.exists(img_path):
+                with open(img_path, "rb") as f:
+                    caption = "📸 <b>Как сделать правильное фото</b>" if i == 0 else None
+                    media_group.append(InputMediaPhoto(
+                        media=f.read(),
+                        caption=caption,
+                        parse_mode=ParseMode.HTML if caption else None
+                    ))
+        if media_group:
+            await query.get_bot().send_media_group(chat_id, media=media_group)
+    except Exception as e:
+        logger.warning(f"Instruction images error: {e}")
 
 
 # ════════════════════════════════════════════════════════════════════════════
@@ -431,6 +491,8 @@ async def photo_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         tier = "full"
     else:
         tier = consume_grant(username)
+        if not tier:
+            tier = consume_grant_by_chat_id(update.effective_chat.id)
 
     if not tier:
         await update.message.reply_text(
@@ -463,34 +525,30 @@ async def photo_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             parse_mode=ParseMode.HTML)
         return
 
-    # ── Сообщение "думаю" + реальный анализ за 2 минуты ─────────────────────
+    # ── Сообщение "думаю" + реальный анализ за 1 минуту ─────────────────────
     await update.message.reply_text(
         "🤔 <b>Изучаю ваше лицо...</b>\n\n"
         "Провожу тщательный анализ по всем метрикам — "
-        "золотое сечение, симметрия, кантальный тильт, угол челюсти и ещё 16 параметров.\n\n"
-        "⏳ Это займёт около <b>2 минут</b> — не закрывайте чат.",
+        "золотое сечение, симметрия, кантальный тильт, угол челюсти и ещё 16 параметров.",
         parse_mode=ParseMode.HTML)
 
     # Запускаем анализ в фоне и фиксируем время старта
     start_time = time.monotonic()
     analysis_future = loop.run_in_executor(None, analyze_face, img_bytes)
 
-    # Через 60 секунд — промежуточное сообщение
-    await asyncio.sleep(60)
-    await update.message.reply_text(
-        "⏳ <b>Почти готово...</b>\n\n"
-        "Финальные расчёты и сравнение с базой референсных лиц.",
-        parse_mode=ParseMode.HTML)
+    # Через 30 секунд — промежуточное сообщение
+    await asyncio.sleep(30)
+    await update.message.reply_text("⏳ <b>Почти готово...</b>", parse_mode=ParseMode.HTML)
 
-    # Ждём завершения анализа (минимум 120 сек от старта)
+    # Ждём завершения анализа (минимум 60 сек от старта)
     try:
         metrics = await analysis_future
     except Exception as exc:
         raise exc
 
     elapsed = time.monotonic() - start_time
-    if elapsed < 120:
-        await asyncio.sleep(120 - elapsed)
+    if elapsed < 60:
+        await asyncio.sleep(60 - elapsed)
 
     try:
         if not metrics:

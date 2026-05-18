@@ -99,21 +99,37 @@ def get_chat_id_by_username(username: str) -> Optional[int]:
     return _load().get("username_to_chat", {}).get(username)
 
 
-# ── Granted users (admin manually approves after payment) ────────────────────
+# ── Granted users ────────────────────────────────────────────────────────────
 
 def grant_analysis(username: str, tier: str):
-    """Admin grants one free analysis (tier: 'brief' | 'full') to a user."""
+    """Grant by username (admin use)."""
     username = username.lstrip("@").lower()
     data = _load()
     data.setdefault("granted", {})[username] = tier
     _save(data)
 
 
+def grant_by_chat_id(chat_id: int, tier: str):
+    """Grant by Telegram chat_id (self-activation after payment)."""
+    data = _load()
+    data.setdefault("granted_by_id", {})[str(chat_id)] = tier
+    _save(data)
+
+
 def consume_grant(username: str) -> Optional[str]:
-    """Returns tier and removes grant if the user has one, else None."""
+    """Returns tier and removes grant if the user has one (by username), else None."""
     username = username.lstrip("@").lower()
     data = _load()
     tier = data.get("granted", {}).pop(username, None)
+    if tier:
+        _save(data)
+    return tier
+
+
+def consume_grant_by_chat_id(chat_id: int) -> Optional[str]:
+    """Returns tier and removes grant if the user has one (by chat_id), else None."""
+    data = _load()
+    tier = data.get("granted_by_id", {}).pop(str(chat_id), None)
     if tier:
         _save(data)
     return tier
@@ -123,6 +139,11 @@ def get_grant(username: str) -> Optional[str]:
     """Check if user has a grant without consuming it."""
     username = username.lstrip("@").lower()
     return _load().get("granted", {}).get(username)
+
+
+def has_grant_by_chat_id(chat_id: int) -> Optional[str]:
+    """Check if user has a chat_id grant without consuming."""
+    return _load().get("granted_by_id", {}).get(str(chat_id))
 
 
 # ── Broadcast list (all users who started the bot) ───────────────────────────
