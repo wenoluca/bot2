@@ -6,6 +6,24 @@ uri = "file://attached_assets/ideal_face_10.png"
 type = "image"
 title = "ideal male face 10/10 metrics"
 
+[[generated]]
+id = "05pP43vltLQJdYtgQZLhI"
+uri = "file://bot/assets/ltn_face_example.png"
+type = "image"
+title = "ltn face example"
+
+[[generated]]
+id = "3n4cN1yZS9cG0Hv-B9GTC"
+uri = "file://bot/assets/ltn_face_v2.png"
+type = "image"
+title = "ltn face extreme"
+
+[[generated]]
+id = "IDcNpH_NY8a72vYC-Huwu"
+uri = "file://bot/assets/ltn_targeted.png"
+type = "image"
+title = "ltn targeted face"
+
 [[outputs]]
 id = "PaOgP44Rbhy6qfV0K0hax"
 uri = "file://bot/assets/example_brief.pdf"
@@ -23,3 +41,9 @@ id = "11dP1bqie_reJtTYXg-ET"
 uri = "file://attached_assets/ideal_face_10.png"
 type = "image"
 title = "Идеальное лицо — 10/10 по метрикам Facedex"
+
+[[outputs]]
+id = "sCtO-G34ZqhE53z7OqIM_"
+uri = "file://bot/assets/ltn_face_v2.png"
+type = "image"
+title = "Лучшая попытка LTN — 7.15/10 (HTN)"
