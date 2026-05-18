@@ -106,7 +106,7 @@ BRIEF_TEXT = (
     "📍 <b>Главное меню  ›  Выбор тарифа  ›  Оплата</b>\n\n"
     "<blockquote>"
     "⚜️ <b>План</b>  —  Краткий разбор\n\n"
-    "💰 <b>Цена</b>  —  199 ₽"
+    "💰 <b>Цена</b>  —  350 ₽"
     "</blockquote>\n\n"
     "📚 <b>Что входит в один разбор:</b>\n\n"
     "<blockquote>"
@@ -129,7 +129,7 @@ FULL_TEXT = (
     "📍 <b>Главное меню  ›  Выбор тарифа  ›  Оплата</b>\n\n"
     "<blockquote>"
     "⚜️ <b>План</b>  —  Полный разбор\n\n"
-    "💰 <b>Цена</b>  —  499 ₽"
+    "💰 <b>Цена</b>  —  750 ₽"
     "</blockquote>\n\n"
     "📚 <b>Что входит в один разбор:</b>\n\n"
     "<blockquote>"
@@ -188,8 +188,8 @@ def kb_main():
 
 def kb_plans():
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton("📋  Краткий разбор  —  199 ₽", callback_data="plan_brief")],
-        [InlineKeyboardButton("📊  Полный разбор  —  499 ₽",  callback_data="plan_full")],
+        [InlineKeyboardButton("📋  Краткий разбор  —  350 ₽", callback_data="plan_brief")],
+        [InlineKeyboardButton("📊  Полный разбор  —  750 ₽",  callback_data="plan_full")],
         [InlineKeyboardButton("◀️  Назад",                     callback_data="menu_main")],
     ])
 
@@ -242,9 +242,9 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def _send_example_pdfs(chat_id: int, context: ContextTypes.DEFAULT_TYPE):
     for fname, caption, display_name in [
-        ("example_brief.pdf", "📋 <b>Краткий разбор</b> — пример отчёта (199 ₽)",
+        ("example_brief.pdf", "📋 <b>Краткий разбор</b> — пример отчёта (350 ₽)",
          "Краткий разбор — пример.pdf"),
-        ("example_full.pdf",  "📊 <b>Полный разбор</b> — пример отчёта (499 ₽)",
+        ("example_full.pdf",  "📊 <b>Полный разбор</b> — пример отчёта (750 ₽)",
          "Полный разбор — пример.pdf"),
     ]:
         path = os.path.join(ASSETS_DIR, fname)
