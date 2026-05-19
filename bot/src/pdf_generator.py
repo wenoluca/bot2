@@ -53,8 +53,8 @@ INFL_BG   = colors.HexColor("#0D1B3E")   # блок влияния
 INFL_BD   = colors.HexColor("#4A6CF7")   # граница блока влияния
 SCORE_BG  = SURFACE
 
-BOT    = "Qzels Face Bot"
-HANDLE = "@qzelshelp_bot"
+BOT    = "Facedex Bot"
+HANDLE = "@facedex_bot"
 
 # ── Вспомогательные ──────────────────────────────────────────────────────────
 def _c(y_top): return H - y_top

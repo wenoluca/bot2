@@ -57,7 +57,7 @@ def _draw_cover(c: pdfgen_canvas.Canvas):
     # Bot name
     c.setFont("DVB", 30)
     c.setFillColor(GOLD_HEX)
-    title = "QZELS FACE BOT"
+    title = "FACEDEX BOT"
     tw = c.stringWidth(title, "DVB", 30)
     c.drawString((PW - tw) / 2, _c(90), title)
 
@@ -179,7 +179,7 @@ def _draw_rule_page(c: pdfgen_canvas.Canvas, num: int, img_path: str,
     # Footer
     c.setFont("DV", 9)
     c.setFillColor(GREY_HEX)
-    footer = f"Qzels Face Bot  ·  Правило {num} из 8"
+    footer = f"Facedex Bot  ·  Правило {num} из 8"
     fw = c.stringWidth(footer, "DV", 9)
     c.drawString((PW - fw) / 2, 9, footer)
 
@@ -194,8 +194,8 @@ def generate_instruction_pdf(output_path: str = None) -> bytes:
 
     buf = BytesIO()
     c = pdfgen_canvas.Canvas(buf, pagesize=A4)
-    c.setTitle("Инструкция по съёмке — Qzels Face Bot")
-    c.setAuthor("Qzels Face Bot")
+    c.setTitle("Инструкция по съёмке — Facedex Bot")
+    c.setAuthor("Facedex Bot")
 
     # Cover page
     _draw_cover(c)

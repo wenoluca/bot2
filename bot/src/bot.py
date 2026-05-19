@@ -73,8 +73,8 @@ def _tier_label(t):
 def _main_text() -> str:
     daily = get_displayed_daily_count()
     return (
-        "✨ <b>Добро пожаловать в Qzels Face Bot</b>\n\n"
-        "🔬 Qzels Face Bot математически измеряет, насколько гармонично черты твоего лица "
+        "✨ <b>Добро пожаловать в Facedex Bot</b>\n\n"
+        "🔬 Facedex Bot математически измеряет, насколько гармонично черты твоего лица "
         "сочетаются друг с другом.\n\n"
         "<blockquote>"
         "💼 <b>Твой баланс:</b> 0 разборов\n"
@@ -85,8 +85,8 @@ def _main_text() -> str:
 
 
 ABOUT_TEXT = (
-    "🔬 <b>Что такое Qzels Face Bot?</b>\n\n"
-    "Qzels Face Bot — математический анализ гармонии лица:\n\n"
+    "🔬 <b>Что такое Facedex Bot?</b>\n\n"
+    "Facedex Bot — математический анализ гармонии лица:\n\n"
     "📐 <b>Золотое сечение φ = 1.618</b> — идеальные пропорции\n"
     "🪞 <b>Симметрия</b> — сравнение левой и правой половин\n"
     "📏 <b>Три трети лица</b> — лоб, нос и подбородок\n"
@@ -230,11 +230,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         save_admin_chat_id(update.effective_chat.id)
         logger.info(f"Admin chat_id: {update.effective_chat.id}")
 
-    example_photo_path = os.path.join(ASSETS_DIR, "example_face.jpg")
-    if os.path.exists(example_photo_path):
-        with open(example_photo_path, "rb") as f:
-            await context.bot.send_photo(update.effective_chat.id, photo=f)
-
     await context.bot.send_message(
         update.effective_chat.id,
         _main_text(),
@@ -297,7 +292,7 @@ async def _send_instruction_pdf(chat_id: int, bot):
         await bot.send_document(
             chat_id,
             document=BytesIO(pdf_bytes),
-            filename="Инструкция по съёмке — Qzels Face Bot.pdf",
+            filename="Инструкция по съёмке — Facedex Bot.pdf",
             caption=(
                 "📸 <b>Инструкция по съёмке</b>\n\n"
                 "Прочитайте перед отправкой фото — это напрямую влияет на точность разбора."
@@ -370,7 +365,7 @@ async def cmd_announce(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     text = " ".join(context.args)
     msg = (
-        "📢 <b>Сообщение от Qzels Face Bot:</b>\n\n"
+        "📢 <b>Сообщение от Facedex Bot:</b>\n\n"
         f"{text}"
     )
     ids = get_all_user_ids()
@@ -499,7 +494,7 @@ async def photo_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if metrics.likely_female:
             await update.message.reply_text(
                 "⚠️ <b>Внимание!</b>\n\n"
-                "Qzels Face Bot оптимизирован под <b>мужскую</b> геометрию лица — "
+                "Facedex Bot оптимизирован под <b>мужскую</b> геометрию лица — "
                 "нормы Фаркаса и все метрики настроены именно под мужские пропорции.\n\n"
                 "На твоём фото обнаружены черты, характерные для <b>женского</b> лица. "
                 "Разбор будет сравнивать тебя с мужскими нормами, поэтому оценки "
@@ -513,15 +508,15 @@ async def photo_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             pdf_b = await loop.run_in_executor(None, generate_brief_pdf, metrics, uname)
             await context.bot.send_document(
                 update.effective_chat.id, BytesIO(pdf_b),
-                filename="Краткий разбор — Qzels Face Bot.pdf",
-                caption="📋 <b>Краткий разбор Qzels Face Bot</b>\n\nСпасибо, что используешь Qzels Face Bot! 🚀",
+                filename="Краткий разбор — Facedex Bot.pdf",
+                caption="📋 <b>Краткий разбор Facedex Bot</b>\n\nСпасибо, что используешь Facedex Bot! 🚀",
                 parse_mode=ParseMode.HTML)
         else:
             pdf_f = await loop.run_in_executor(None, generate_full_pdf, metrics, uname)
             await context.bot.send_document(
                 update.effective_chat.id, BytesIO(pdf_f),
-                filename="Полный разбор — Qzels Face Bot.pdf",
-                caption="📊 <b>Полный разбор Qzels Face Bot</b>",
+                filename="Полный разбор — Facedex Bot.pdf",
+                caption="📊 <b>Полный разбор Facedex Bot</b>",
                 parse_mode=ParseMode.HTML)
 
         increment_daily_count()
@@ -556,7 +551,7 @@ def main():
     app.add_handler(CallbackQueryHandler(callback_handler))
     app.add_handler(MessageHandler(filters.PHOTO, photo_handler))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, text_handler))
-    logger.info("Qzels Face Bot запущен...")
+    logger.info("Facedex Bot запущен...")
     app.run_polling(allowed_updates=Update.ALL_TYPES)
 
 
