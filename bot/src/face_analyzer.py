@@ -665,7 +665,7 @@ def analyze_face(image_bytes: bytes) -> Optional[FaceMetrics]:
                                            direction="up")
     # Vert balance = middle/lower. Ниже нормы = длиннее нижняя треть = мужественнее → direction="down"
     vertical_balance_score  = _sigma_score(vert_balance,      *FARKAS["vertical_balance"],
-                                           direction="down")
+                                           direction="down", min_score=7.0)
     cheekbones_score        = _sigma_score(cheek_jaw_ratio,   *FARKAS["cheek_jaw"],
                                            direction="down")   # шире челюсть = лучше
     eyes_score              = _sigma_score(eye_to_face,       *FARKAS["eye_to_face"])
