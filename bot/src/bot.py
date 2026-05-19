@@ -193,7 +193,7 @@ def kb_main():
 def kb_plans():
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("📋  Краткий разбор  —  349 ₽", callback_data="plan_brief")],
-        [InlineKeyboardButton("📊  Полный разбор  —  749 ₽",  callback_data="plan_full")],
+        [InlineKeyboardButton("📊  Полный разбор  —  749 ₽  (рекомендуем)",  callback_data="plan_full")],
         [InlineKeyboardButton("◀️  Назад",                     callback_data="menu_main")],
     ])
 
