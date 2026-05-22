@@ -32,7 +32,7 @@ from storage import (
     save_user_chat_id, get_chat_id_by_username,
     create_referral, delete_referral, referral_exists,
     track_referral_visit, set_user_referral,
-    track_referral_purchase, get_all_referrals,
+    track_referral_purchase, get_all_referrals, get_referrals_for_user,
 )
 
 logging.basicConfig(
@@ -365,8 +365,9 @@ async def cmd_grant(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def cmd_newref(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """
-    /newref <название>
-    Создать реферальную ссылку (только для админа).
+    /newref <название> [@username]
+    Создать реферальную ссылку со случайным кодом (только для админа).
+    Необязательно: @username — кому дать доступ к статистике этого рефа.
     """
     user = update.effective_user
     if not _is_admin(user):
@@ -375,78 +376,92 @@ async def cmd_newref(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if not context.args:
         await update.message.reply_text(
-            "Использование: /newref <название>\n\n"
-            "Пример: /newref instagram_ad\n\n"
-            "Название: только латинские буквы, цифры и _")
+            "Использование:\n"
+            "/newref <название>\n"
+            "/newref <название> @username\n\n"
+            "Пример:\n"
+            "/newref Instagram\n"
+            "/newref Instagram @partner_user")
         return
 
-    name = context.args[0].lower().strip()
-    if not re.match(r'^[a-z0-9_]+$', name):
-        await update.message.reply_text(
-            "❌ Название может содержать только латинские буквы, цифры и _\n"
-            "Пример: /newref instagram_ad")
-        return
-
-    success = create_referral(name)
-    if not success:
-        await update.message.reply_text(
-            f"❌ Реферал <b>{name}</b> уже существует.\n"
-            f"Смотри все ссылки: /refs",
-            parse_mode=ParseMode.HTML)
-        return
+    name = context.args[0].strip()
+    access_usernames = []
+    if len(context.args) >= 2:
+        access_usernames = [context.args[1].lstrip("@").lower()]
 
     bot_info = await context.bot.get_me()
-    link = f"https://t.me/{bot_info.username}?start=ref_{name}"
+    code = create_referral(name, access_usernames)
+    link = f"https://t.me/{bot_info.username}?start=ref_{code}"
+
+    access_line = ""
+    if access_usernames:
+        access_line = f"\n👤 <b>Доступ к статистике:</b> @{access_usernames[0]}"
+
     await update.message.reply_text(
         f"✅ <b>Реферальная ссылка создана!</b>\n\n"
-        f"📎 <b>Название:</b> <code>{name}</code>\n\n"
+        f"📎 <b>Название:</b> {name}\n"
+        f"🔑 <b>Код:</b> <code>{code}</code>{access_line}\n\n"
         f"🔗 <b>Ссылка:</b>\n<code>{link}</code>\n\n"
-        f"Статистику смотри через /refs\n"
+        f"Статистика: /refs\n"
         f"Удалить: /delref {name}",
         parse_mode=ParseMode.HTML)
+
+
+def _format_refs_block(refs: dict, bot_username: str) -> str:
+    if not refs:
+        return ""
+    lines = []
+    for code, data in refs.items():
+        friendly = data.get("name", code)
+        visitors  = len(data.get("visitors", []))
+        purchases = data.get("purchases", [])
+        brief_cnt = sum(1 for p in purchases if p.get("tier") == "brief")
+        full_cnt  = sum(1 for p in purchases if p.get("tier") == "full")
+        link = f"https://t.me/{bot_username}?start=ref_{code}"
+        access = data.get("access_users", [])
+        access_line = (f"\n   👤 Доступ: @{', @'.join(access)}" if access else "")
+        lines.append(
+            f"🔗 <b>{friendly}</b> (<code>{code}</code>){access_line}\n"
+            f"   👥 Переходов: <b>{visitors}</b>\n"
+            f"   💰 Покупок: <b>{len(purchases)}</b>"
+            + (f" (краткий: {brief_cnt}, полный: {full_cnt})" if purchases else "")
+            + f"\n   <code>{link}</code>"
+        )
+    return "\n\n".join(lines)
 
 
 async def cmd_refs(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """
     /refs
-    Показать все реферальные ссылки и статистику (только для админа).
+    Показать реферальные ссылки:
+    - Администратор видит все ссылки.
+    - Пользователь с доступом видит только свои.
     """
     user = update.effective_user
-    if not _is_admin(user):
-        await update.message.reply_text("⛔ Эта команда только для администратора.")
-        return
-
-    refs = get_all_referrals()
-    if not refs:
-        await update.message.reply_text(
-            "📊 Реферальных ссылок пока нет.\n\n"
-            "Создай первую: /newref <название>")
-        return
-
+    username = (user.username or "").lower()
     bot_info = await context.bot.get_me()
-    lines = ["📊 <b>Реферальные ссылки:</b>\n"]
 
-    for name, data in refs.items():
-        visitors = len(data.get("visitors", []))
-        purchases = data.get("purchases", [])
-        brief_cnt = sum(1 for p in purchases if p.get("tier") == "brief")
-        full_cnt  = sum(1 for p in purchases if p.get("tier") == "full")
-        link = f"https://t.me/{bot_info.username}?start=ref_{name}"
-        lines.append(
-            f"🔗 <b>{name}</b>\n"
-            f"   👥 Уникальных переходов: <b>{visitors}</b>\n"
-            f"   💰 Покупок: <b>{len(purchases)}</b>"
-            + (f" (краткий: {brief_cnt}, полный: {full_cnt})" if purchases else "")
-            + f"\n   Ссылка: <code>{link}</code>\n"
-        )
+    if _is_admin(user):
+        refs = get_all_referrals()
+        if not refs:
+            await update.message.reply_text(
+                "📊 Реферальных ссылок пока нет.\n\nСоздай: /newref <название>")
+            return
+        text = "📊 <b>Все реферальные ссылки:</b>\n\n" + _format_refs_block(refs, bot_info.username)
+        text += "\n\nУдалить: /delref &lt;название или код&gt;"
+    else:
+        refs = get_referrals_for_user(username)
+        if not refs:
+            await update.message.reply_text("⛔ У вас нет доступа к реферальной статистике.")
+            return
+        text = "📊 <b>Ваши реферальные ссылки:</b>\n\n" + _format_refs_block(refs, bot_info.username)
 
-    lines.append("Удалить: /delref &lt;название&gt;")
-    await update.message.reply_text("\n".join(lines), parse_mode=ParseMode.HTML)
+    await update.message.reply_text(text, parse_mode=ParseMode.HTML)
 
 
 async def cmd_delref(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """
-    /delref <название>
+    /delref <название или код>
     Удалить реферальную ссылку (только для админа).
     """
     user = update.effective_user
@@ -455,19 +470,19 @@ async def cmd_delref(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     if not context.args:
-        await update.message.reply_text("Использование: /delref <название>")
+        await update.message.reply_text("Использование: /delref <название или код>")
         return
 
-    name = context.args[0].lower().strip()
-    success = delete_referral(name)
+    val = context.args[0].strip()
+    success = delete_referral(val)
     if not success:
         await update.message.reply_text(
-            f"❌ Реферал <b>{name}</b> не найден.\n"
+            f"❌ Реферал <b>{val}</b> не найден.\n"
             f"Все ссылки: /refs",
             parse_mode=ParseMode.HTML)
     else:
         await update.message.reply_text(
-            f"✅ Реферал <b>{name}</b> удалён.", parse_mode=ParseMode.HTML)
+            f"✅ Реферал <b>{val}</b> удалён.", parse_mode=ParseMode.HTML)
 
 
 async def cmd_announce(update: Update, context: ContextTypes.DEFAULT_TYPE):
