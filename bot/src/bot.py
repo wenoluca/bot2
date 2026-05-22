@@ -238,11 +238,30 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if context.args:
         param = context.args[0]
         if param.startswith("ref_"):
-            ref_name = param[4:]
-            if referral_exists(ref_name):
-                track_referral_visit(ref_name, user.id)
-                set_user_referral(user.id, ref_name)
-                logger.info(f"Referral visit: {ref_name} by user {user.id}")
+            ref_code = param[4:]
+            if referral_exists(ref_code):
+                is_new = track_referral_visit(ref_code, user.id)
+                set_user_referral(user.id, ref_code)
+                logger.info(f"Referral visit: {ref_code} by user {user.id}")
+                if is_new:
+                    admin_id = get_admin_chat_id()
+                    if admin_id:
+                        refs = get_all_referrals()
+                        ref_data = refs.get(ref_code, {})
+                        friendly = ref_data.get("name", ref_code)
+                        visitors = len(ref_data.get("visitors", []))
+                        uname = f"@{user.username}" if user.username else user.full_name
+                        try:
+                            await context.bot.send_message(
+                                admin_id,
+                                f"🔗 <b>Новый переход по реферальной ссылке</b>\n\n"
+                                f"👤 Пользователь: {uname} (<code>{user.id}</code>)\n"
+                                f"📎 Ссылка: <b>{friendly}</b> (<code>{ref_code}</code>)\n"
+                                f"👥 Всего переходов: <b>{visitors}</b>",
+                                parse_mode=ParseMode.HTML,
+                            )
+                        except Exception as e:
+                            logger.warning(f"Referral visit notify error: {e}")
 
     await context.bot.send_message(
         update.effective_chat.id,
