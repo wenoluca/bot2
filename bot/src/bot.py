@@ -581,6 +581,30 @@ async def photo_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             tier = consume_grant_by_chat_id(update.effective_chat.id)
         if tier:
             track_referral_purchase(user.id, tier)
+            # Уведомить @facedex_support о покупке по реферальной ссылке
+            from storage import get_user_referral
+            ref_code = get_user_referral(user.id)
+            if ref_code:
+                admin_id = get_admin_chat_id()
+                if admin_id:
+                    refs = get_all_referrals()
+                    ref_data = refs.get(ref_code, {})
+                    friendly = ref_data.get("name", ref_code)
+                    purchases = len(ref_data.get("purchases", []))
+                    uname = f"@{user.username}" if user.username else user.full_name
+                    tier_ru = "Краткий разбор" if tier == "brief" else "Полный разбор"
+                    try:
+                        await context.bot.send_message(
+                            admin_id,
+                            f"💰 <b>Покупка по реферальной ссылке!</b>\n\n"
+                            f"👤 Пользователь: {uname} (<code>{user.id}</code>)\n"
+                            f"📋 Тариф: <b>{tier_ru}</b>\n"
+                            f"📎 Ссылка: <b>{friendly}</b> (<code>{ref_code}</code>)\n"
+                            f"💰 Всего покупок по ссылке: <b>{purchases}</b>",
+                            parse_mode=ParseMode.HTML,
+                        )
+                    except Exception as e:
+                        logger.warning(f"Referral purchase notify error: {e}")
 
     if not tier:
         await update.message.reply_text(
