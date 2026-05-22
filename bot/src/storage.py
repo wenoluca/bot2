@@ -160,3 +160,86 @@ def register_user(chat_id: int, username: str = ""):
 
 def get_all_user_ids() -> list:
     return _load().get("user_ids", [])
+
+
+# ── Referral system ───────────────────────────────────────────────────────────
+
+def create_referral(name: str) -> bool:
+    """Create a named referral. Returns False if name already exists."""
+    name = name.lower().strip()
+    data = _load()
+    refs = data.setdefault("referrals", {})
+    if name in refs:
+        return False
+    refs[name] = {
+        "created_at": date.today().isoformat(),
+        "visitors": [],
+        "purchases": [],
+    }
+    _save(data)
+    return True
+
+
+def delete_referral(name: str) -> bool:
+    """Delete a referral by name. Returns False if not found."""
+    name = name.lower().strip()
+    data = _load()
+    refs = data.get("referrals", {})
+    if name not in refs:
+        return False
+    del refs[name]
+    _save(data)
+    return True
+
+
+def referral_exists(name: str) -> bool:
+    name = name.lower().strip()
+    return name in _load().get("referrals", {})
+
+
+def track_referral_visit(name: str, user_id: int) -> bool:
+    """Track a unique visitor. Returns True if this is a new visitor."""
+    name = name.lower().strip()
+    data = _load()
+    refs = data.get("referrals", {})
+    if name not in refs:
+        return False
+    visitors = refs[name].setdefault("visitors", [])
+    if user_id not in visitors:
+        visitors.append(user_id)
+        _save(data)
+        return True
+    return False
+
+
+def set_user_referral(user_id: int, name: str):
+    """Associate a user with a referral source."""
+    data = _load()
+    data.setdefault("user_referral", {})[str(user_id)] = name.lower().strip()
+    _save(data)
+
+
+def get_user_referral(user_id: int) -> Optional[str]:
+    """Get the referral name associated with a user, if any."""
+    return _load().get("user_referral", {}).get(str(user_id))
+
+
+def track_referral_purchase(user_id: int, tier: str):
+    """Track a purchase and attribute it to the user's referral source."""
+    ref_name = get_user_referral(user_id)
+    if not ref_name:
+        return
+    data = _load()
+    refs = data.get("referrals", {})
+    if ref_name not in refs:
+        return
+    refs[ref_name].setdefault("purchases", []).append({
+        "user_id": user_id,
+        "tier": tier,
+        "date": date.today().isoformat(),
+    })
+    _save(data)
+
+
+def get_all_referrals() -> dict:
+    return _load().get("referrals", {})

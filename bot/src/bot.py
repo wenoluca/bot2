@@ -1,4 +1,5 @@
 import os
+import re
 import sys
 import logging
 import asyncio
@@ -29,6 +30,9 @@ from storage import (
     grant_analysis, consume_grant, get_grant,
     register_user, get_all_user_ids,
     save_user_chat_id, get_chat_id_by_username,
+    create_referral, delete_referral, referral_exists,
+    track_referral_visit, set_user_referral,
+    track_referral_purchase, get_all_referrals,
 )
 
 logging.basicConfig(
@@ -230,6 +234,16 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         save_admin_chat_id(update.effective_chat.id)
         logger.info(f"Admin chat_id: {update.effective_chat.id}")
 
+    # Обработка реферальной ссылки (/start ref_<name>)
+    if context.args:
+        param = context.args[0]
+        if param.startswith("ref_"):
+            ref_name = param[4:]
+            if referral_exists(ref_name):
+                track_referral_visit(ref_name, user.id)
+                set_user_referral(user.id, ref_name)
+                logger.info(f"Referral visit: {ref_name} by user {user.id}")
+
     await context.bot.send_message(
         update.effective_chat.id,
         _main_text(),
@@ -349,6 +363,113 @@ async def cmd_grant(update: Update, context: ContextTypes.DEFAULT_TYPE):
             logger.warning(f"Grant notify error for @{username}: {e}")
 
 
+async def cmd_newref(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """
+    /newref <название>
+    Создать реферальную ссылку (только для админа).
+    """
+    user = update.effective_user
+    if not _is_admin(user):
+        await update.message.reply_text("⛔ Эта команда только для администратора.")
+        return
+
+    if not context.args:
+        await update.message.reply_text(
+            "Использование: /newref <название>\n\n"
+            "Пример: /newref instagram_ad\n\n"
+            "Название: только латинские буквы, цифры и _")
+        return
+
+    name = context.args[0].lower().strip()
+    if not re.match(r'^[a-z0-9_]+$', name):
+        await update.message.reply_text(
+            "❌ Название может содержать только латинские буквы, цифры и _\n"
+            "Пример: /newref instagram_ad")
+        return
+
+    success = create_referral(name)
+    if not success:
+        await update.message.reply_text(
+            f"❌ Реферал <b>{name}</b> уже существует.\n"
+            f"Смотри все ссылки: /refs",
+            parse_mode=ParseMode.HTML)
+        return
+
+    bot_info = await context.bot.get_me()
+    link = f"https://t.me/{bot_info.username}?start=ref_{name}"
+    await update.message.reply_text(
+        f"✅ <b>Реферальная ссылка создана!</b>\n\n"
+        f"📎 <b>Название:</b> <code>{name}</code>\n\n"
+        f"🔗 <b>Ссылка:</b>\n<code>{link}</code>\n\n"
+        f"Статистику смотри через /refs\n"
+        f"Удалить: /delref {name}",
+        parse_mode=ParseMode.HTML)
+
+
+async def cmd_refs(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """
+    /refs
+    Показать все реферальные ссылки и статистику (только для админа).
+    """
+    user = update.effective_user
+    if not _is_admin(user):
+        await update.message.reply_text("⛔ Эта команда только для администратора.")
+        return
+
+    refs = get_all_referrals()
+    if not refs:
+        await update.message.reply_text(
+            "📊 Реферальных ссылок пока нет.\n\n"
+            "Создай первую: /newref <название>")
+        return
+
+    bot_info = await context.bot.get_me()
+    lines = ["📊 <b>Реферальные ссылки:</b>\n"]
+
+    for name, data in refs.items():
+        visitors = len(data.get("visitors", []))
+        purchases = data.get("purchases", [])
+        brief_cnt = sum(1 for p in purchases if p.get("tier") == "brief")
+        full_cnt  = sum(1 for p in purchases if p.get("tier") == "full")
+        link = f"https://t.me/{bot_info.username}?start=ref_{name}"
+        lines.append(
+            f"🔗 <b>{name}</b>\n"
+            f"   👥 Уникальных переходов: <b>{visitors}</b>\n"
+            f"   💰 Покупок: <b>{len(purchases)}</b>"
+            + (f" (краткий: {brief_cnt}, полный: {full_cnt})" if purchases else "")
+            + f"\n   Ссылка: <code>{link}</code>\n"
+        )
+
+    lines.append("Удалить: /delref &lt;название&gt;")
+    await update.message.reply_text("\n".join(lines), parse_mode=ParseMode.HTML)
+
+
+async def cmd_delref(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """
+    /delref <название>
+    Удалить реферальную ссылку (только для админа).
+    """
+    user = update.effective_user
+    if not _is_admin(user):
+        await update.message.reply_text("⛔ Эта команда только для администратора.")
+        return
+
+    if not context.args:
+        await update.message.reply_text("Использование: /delref <название>")
+        return
+
+    name = context.args[0].lower().strip()
+    success = delete_referral(name)
+    if not success:
+        await update.message.reply_text(
+            f"❌ Реферал <b>{name}</b> не найден.\n"
+            f"Все ссылки: /refs",
+            parse_mode=ParseMode.HTML)
+    else:
+        await update.message.reply_text(
+            f"✅ Реферал <b>{name}</b> удалён.", parse_mode=ParseMode.HTML)
+
+
 async def cmd_announce(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """
     /announce <текст>
@@ -424,6 +545,8 @@ async def photo_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         tier = consume_grant(username)
         if not tier:
             tier = consume_grant_by_chat_id(update.effective_chat.id)
+        if tier:
+            track_referral_purchase(user.id, tier)
 
     if not tier:
         await update.message.reply_text(
@@ -548,6 +671,9 @@ def main():
     app.add_handler(CommandHandler("start",    start))
     app.add_handler(CommandHandler("grant",    cmd_grant))
     app.add_handler(CommandHandler("announce", cmd_announce))
+    app.add_handler(CommandHandler("newref",   cmd_newref))
+    app.add_handler(CommandHandler("refs",     cmd_refs))
+    app.add_handler(CommandHandler("delref",   cmd_delref))
     app.add_handler(CallbackQueryHandler(callback_handler))
     app.add_handler(MessageHandler(filters.PHOTO, photo_handler))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, text_handler))
